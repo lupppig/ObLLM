@@ -1,4 +1,4 @@
-import { Notice, Plugin } from 'obsidian';
+import { Notice, Plugin, TFile } from 'obsidian';
 import { ObLLMSettings, DEFAULT_SETTINGS } from './settings';
 import { ObLLMSettingTab } from './settings-tab';
 import { VaultScanner } from './scanner/vault-scanner';
@@ -6,6 +6,8 @@ import { Chunker } from './scanner/chunker';
 import { getFileReader } from './scanner/file-reader';
 import { IndexStore } from './retrieval/index-store';
 import { KeywordRetriever } from './retrieval/keyword-retriever';
+import { EmbeddingRetriever } from './retrieval/embedding-retriever';
+import { HybridRetriever } from './retrieval/hybrid-retriever';
 import type { Retriever, ScoredChunk } from './retrieval/retriever';
 import { GeminiProvider } from './llm/gemini-provider';
 import type { LLMProvider } from './llm/provider';
@@ -53,7 +55,7 @@ export default class ObLLMPlugin extends Plugin {
 		);
 		await this.indexStore.load();
 
-		this.retriever = new KeywordRetriever(this.indexStore);
+		this.retriever = this.createRetriever();
 		this.llmProvider = this.createLLMProvider();
 		this.promptBuilder = new PromptBuilder();
 		this.citationLinker = new CitationLinker();
@@ -81,6 +83,26 @@ export default class ObLLMPlugin extends Plugin {
 			name: 'Summarize notes',
 			callback: () => this.summarizeNotes(),
 		});
+
+		this.addCommand({
+			id: 'combine-sources',
+			name: 'Combine insights from multiple sources',
+			callback: () => this.combineSources(),
+		});
+
+		this.registerEvent(
+			this.app.vault.on('modify', (file) => {
+				if (file instanceof TFile) {
+					this.onFileChanged(file.path, file.extension);
+				}
+			})
+		);
+
+		this.registerEvent(
+			this.app.vault.on('delete', (file) => {
+				this.indexStore.removeChunksForFile(file.path);
+			})
+		);
 	}
 
 	onunload() { }
@@ -92,6 +114,7 @@ export default class ObLLMPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 		this.llmProvider = this.createLLMProvider();
+		this.retriever = this.createRetriever();
 		this.chunker = new Chunker({
 			chunkSize: this.settings.chunkSize,
 			chunkOverlap: this.settings.chunkOverlap,
@@ -105,6 +128,44 @@ export default class ObLLMPlugin extends Plugin {
 			model: this.settings.model,
 			embeddingModel: this.settings.embeddingModel,
 		});
+	}
+
+	private createRetriever(): Retriever {
+		const keyword = new KeywordRetriever(this.indexStore);
+
+		if (this.settings.retrievalMethod === 'keyword') {
+			return keyword;
+		}
+
+		const embedding = new EmbeddingRetriever(this.indexStore, this.llmProvider);
+
+		if (this.settings.retrievalMethod === 'embedding') {
+			return embedding;
+		}
+
+		return new HybridRetriever(keyword, embedding);
+	}
+
+	private async onFileChanged(path: string, extension: string) {
+		const ext = '.' + extension;
+		if (!this.settings.supportedExtensions.includes(ext)) return;
+
+		try {
+			const reader = getFileReader(extension);
+			let content: string | ArrayBuffer;
+			if (extension === 'pdf') {
+				content = await this.scanner.readFileBinary(path);
+			} else {
+				content = await this.scanner.readFileContent(path);
+			}
+			const result = await reader.read(content);
+			const chunks = this.chunker.chunk(result.text, path, result.headings);
+			this.indexStore.addChunks(chunks, path, Date.now());
+			await this.indexStore.save();
+			this.statusBar.showReady(this.indexStore.chunkCount);
+		} catch (err: any) {
+			console.error(`ObLLM: Failed to re-index ${path}:`, err);
+		}
 	}
 
 	private async indexVault() {
@@ -208,5 +269,45 @@ export default class ObLLMPlugin extends Plugin {
 		const leaf = this.app.workspace.getLeaf(false);
 		await leaf.openFile(file);
 		new Notice('ObLLM: Summary created!');
+	}
+
+	private async combineSources() {
+		if (!this.settings.apiKey) {
+			new Notice('ObLLM: Please set your API key in settings first.');
+			return;
+		}
+
+		const chunks = this.indexStore.getAllChunks();
+		if (chunks.length === 0) {
+			new Notice('ObLLM: No indexed notes. Run "Index vault" first.');
+			return;
+		}
+
+		const sourceFiles = [...new Set(chunks.map((c) => c.source))];
+		const scoredChunks: ScoredChunk[] = chunks
+			.slice(0, this.settings.maxChunks * 2)
+			.map((c) => ({ chunk: c, score: 1 }));
+
+		const prompt = [
+			'You are a research assistant.',
+			`Analyze the following notes from ${sourceFiles.length} different sources.`,
+			'Identify recurring themes, connections, contradictions, and key insights.',
+			'Organize your response with clear headings and cite sources using [number].',
+			'',
+			'Sources:',
+			this.promptBuilder.formatContext(scoredChunks),
+		].join('\n');
+
+		new Notice('ObLLM: Analyzing sources...');
+		const response = await this.llmProvider.generate({ prompt });
+		const withCitations = this.citationLinker.linkCitations(response, scoredChunks);
+
+		const file = await this.app.vault.create(
+			`ObLLM Insights - ${new Date().toISOString().slice(0, 10)}.md`,
+			withCitations
+		);
+		const leaf = this.app.workspace.getLeaf(false);
+		await leaf.openFile(file);
+		new Notice('ObLLM: Multi-source analysis complete!');
 	}
 }
