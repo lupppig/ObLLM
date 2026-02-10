@@ -9,7 +9,7 @@ import { KeywordRetriever } from './retrieval/keyword-retriever';
 import { EmbeddingRetriever } from './retrieval/embedding-retriever';
 import { HybridRetriever } from './retrieval/hybrid-retriever';
 import type { Retriever, ScoredChunk } from './retrieval/retriever';
-import { GeminiProvider } from './llm/gemini-provider';
+import { UnifiedProvider } from './llm/unified-provider';
 import type { LLMProvider } from './llm/provider';
 import { PromptBuilder } from './prompt/prompt-builder';
 import { CitationLinker } from './prompt/citation-linker';
@@ -122,12 +122,7 @@ export default class ObLLMPlugin extends Plugin {
 	}
 
 	private createLLMProvider(): LLMProvider {
-		return new GeminiProvider({
-			apiKey: this.settings.apiKey,
-			baseUrl: this.settings.apiBaseUrl,
-			model: this.settings.model,
-			embeddingModel: this.settings.embeddingModel,
-		});
+		return new UnifiedProvider(this.settings);
 	}
 
 	private createRetriever(): Retriever {

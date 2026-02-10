@@ -64,6 +64,19 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName('Ollama Base URL')
+			.setDesc('Base URL for Ollama server (only used with Ollama provider).')
+			.addText((text) =>
+				text
+					.setPlaceholder('http://localhost:11434/api')
+					.setValue(this.host.settings.ollamaBaseUrl)
+					.onChange(async (value) => {
+						this.host.settings.ollamaBaseUrl = value;
+						await this.host.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName('Model')
 			.setDesc('Model name to use for generation.')
 			.addText((text) =>

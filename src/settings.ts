@@ -3,6 +3,7 @@ export interface ObLLMSettings {
 	apiKey: string;
 	apiBaseUrl: string;
 	model: string;
+	ollamaBaseUrl: string;
 
 	embeddingProvider: 'gemini' | 'openai' | 'ollama' | 'none';
 	embeddingModel: string;
@@ -24,8 +25,9 @@ export interface ObLLMSettings {
 export const DEFAULT_SETTINGS: ObLLMSettings = {
 	llmProvider: 'gemini',
 	apiKey: '',
-	apiBaseUrl: 'https://generativelanguage.googleapis.com',
+	apiBaseUrl: '',
 	model: 'gemini-2.5-flash',
+	ollamaBaseUrl: 'http://localhost:11434/api',
 
 	embeddingProvider: 'gemini',
 	embeddingModel: 'gemini-embedding-001',
