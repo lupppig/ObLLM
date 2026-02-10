@@ -1,0 +1,26 @@
+# Build output
+main.js
+*.js.map
+
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+
+# Environment
+.env
+.env.*
+
+# Obsidian
+.obsidian/
+data.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Skill doc (internal reference only)
+SKILL.md
