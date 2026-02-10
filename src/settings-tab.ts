@@ -1,12 +1,17 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
-import type ObLLMPlugin from './main';
+import { App, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import type { ObLLMSettings } from './settings';
+
+interface SettingsHost {
+	settings: ObLLMSettings;
+	saveSettings(): Promise<void>;
+}
 
 export class ObLLMSettingTab extends PluginSettingTab {
-	plugin: ObLLMPlugin;
+	private host: SettingsHost;
 
-	constructor(app: App, plugin: ObLLMPlugin) {
+	constructor(app: App, plugin: Plugin & SettingsHost) {
 		super(app, plugin);
-		this.plugin = plugin;
+		this.host = plugin;
 	}
 
 	display(): void {
@@ -24,10 +29,10 @@ export class ObLLMSettingTab extends PluginSettingTab {
 					.addOption('openai', 'OpenAI')
 					.addOption('ollama', 'Ollama')
 					.addOption('custom', 'Custom')
-					.setValue(this.plugin.settings.llmProvider)
+					.setValue(this.host.settings.llmProvider)
 					.onChange(async (value) => {
-						this.plugin.settings.llmProvider = value as any;
-						await this.plugin.saveSettings();
+						this.host.settings.llmProvider = value as any;
+						await this.host.saveSettings();
 						this.display();
 					})
 			);
@@ -38,10 +43,10 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('Enter API key...')
-					.setValue(this.plugin.settings.apiKey)
+					.setValue(this.host.settings.apiKey)
 					.onChange(async (value) => {
-						this.plugin.settings.apiKey = value;
-						await this.plugin.saveSettings();
+						this.host.settings.apiKey = value;
+						await this.host.saveSettings();
 					})
 			);
 
@@ -51,10 +56,10 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('https://generativelanguage.googleapis.com')
-					.setValue(this.plugin.settings.apiBaseUrl)
+					.setValue(this.host.settings.apiBaseUrl)
 					.onChange(async (value) => {
-						this.plugin.settings.apiBaseUrl = value;
-						await this.plugin.saveSettings();
+						this.host.settings.apiBaseUrl = value;
+						await this.host.saveSettings();
 					})
 			);
 
@@ -64,10 +69,10 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('gemini-2.5-flash')
-					.setValue(this.plugin.settings.model)
+					.setValue(this.host.settings.model)
 					.onChange(async (value) => {
-						this.plugin.settings.model = value;
-						await this.plugin.saveSettings();
+						this.host.settings.model = value;
+						await this.host.saveSettings();
 					})
 			);
 
@@ -82,10 +87,10 @@ export class ObLLMSettingTab extends PluginSettingTab {
 					.addOption('openai', 'OpenAI')
 					.addOption('ollama', 'Ollama')
 					.addOption('none', 'None (keyword only)')
-					.setValue(this.plugin.settings.embeddingProvider)
+					.setValue(this.host.settings.embeddingProvider)
 					.onChange(async (value) => {
-						this.plugin.settings.embeddingProvider = value as any;
-						await this.plugin.saveSettings();
+						this.host.settings.embeddingProvider = value as any;
+						await this.host.saveSettings();
 					})
 			);
 
@@ -95,10 +100,10 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('gemini-embedding-001')
-					.setValue(this.plugin.settings.embeddingModel)
+					.setValue(this.host.settings.embeddingModel)
 					.onChange(async (value) => {
-						this.plugin.settings.embeddingModel = value;
-						await this.plugin.saveSettings();
+						this.host.settings.embeddingModel = value;
+						await this.host.saveSettings();
 					})
 			);
 
@@ -110,13 +115,13 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('e.g. Notes, Research, Books')
-					.setValue(this.plugin.settings.indexedFolders.join(', '))
+					.setValue(this.host.settings.indexedFolders.join(', '))
 					.onChange(async (value) => {
-						this.plugin.settings.indexedFolders = value
+						this.host.settings.indexedFolders = value
 							.split(',')
 							.map((s) => s.trim())
 							.filter((s) => s.length > 0);
-						await this.plugin.saveSettings();
+						await this.host.saveSettings();
 					})
 			);
 
@@ -126,13 +131,13 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('e.g. Templates, Archive')
-					.setValue(this.plugin.settings.excludedFolders.join(', '))
+					.setValue(this.host.settings.excludedFolders.join(', '))
 					.onChange(async (value) => {
-						this.plugin.settings.excludedFolders = value
+						this.host.settings.excludedFolders = value
 							.split(',')
 							.map((s) => s.trim())
 							.filter((s) => s.length > 0);
-						await this.plugin.saveSettings();
+						await this.host.saveSettings();
 					})
 			);
 
@@ -142,13 +147,13 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('.md, .pdf')
-					.setValue(this.plugin.settings.supportedExtensions.join(', '))
+					.setValue(this.host.settings.supportedExtensions.join(', '))
 					.onChange(async (value) => {
-						this.plugin.settings.supportedExtensions = value
+						this.host.settings.supportedExtensions = value
 							.split(',')
 							.map((s) => s.trim())
 							.filter((s) => s.length > 0);
-						await this.plugin.saveSettings();
+						await this.host.saveSettings();
 					})
 			);
 
@@ -162,10 +167,10 @@ export class ObLLMSettingTab extends PluginSettingTab {
 					.addOption('keyword', 'Keyword (TF-IDF)')
 					.addOption('embedding', 'Embedding (Vector)')
 					.addOption('hybrid', 'Hybrid')
-					.setValue(this.plugin.settings.retrievalMethod)
+					.setValue(this.host.settings.retrievalMethod)
 					.onChange(async (value) => {
-						this.plugin.settings.retrievalMethod = value as any;
-						await this.plugin.saveSettings();
+						this.host.settings.retrievalMethod = value as any;
+						await this.host.saveSettings();
 					})
 			);
 
@@ -175,12 +180,12 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('10')
-					.setValue(String(this.plugin.settings.maxChunks))
+					.setValue(String(this.host.settings.maxChunks))
 					.onChange(async (value) => {
 						const num = parseInt(value, 10);
 						if (!isNaN(num) && num > 0) {
-							this.plugin.settings.maxChunks = num;
-							await this.plugin.saveSettings();
+							this.host.settings.maxChunks = num;
+							await this.host.saveSettings();
 						}
 					})
 			);
@@ -191,12 +196,12 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('512')
-					.setValue(String(this.plugin.settings.chunkSize))
+					.setValue(String(this.host.settings.chunkSize))
 					.onChange(async (value) => {
 						const num = parseInt(value, 10);
 						if (!isNaN(num) && num > 0) {
-							this.plugin.settings.chunkSize = num;
-							await this.plugin.saveSettings();
+							this.host.settings.chunkSize = num;
+							await this.host.saveSettings();
 						}
 					})
 			);
@@ -207,12 +212,12 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('64')
-					.setValue(String(this.plugin.settings.chunkOverlap))
+					.setValue(String(this.host.settings.chunkOverlap))
 					.onChange(async (value) => {
 						const num = parseInt(value, 10);
 						if (!isNaN(num) && num >= 0) {
-							this.plugin.settings.chunkOverlap = num;
-							await this.plugin.saveSettings();
+							this.host.settings.chunkOverlap = num;
+							await this.host.saveSettings();
 						}
 					})
 			);

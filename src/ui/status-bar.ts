@@ -1,11 +1,7 @@
-import type ObLLMPlugin from '../main';
-
 export class StatusBarManager {
 	private statusBarEl: HTMLElement;
-	private plugin: ObLLMPlugin;
 
-	constructor(plugin: ObLLMPlugin, statusBarEl: HTMLElement) {
-		this.plugin = plugin;
+	constructor(statusBarEl: HTMLElement) {
 		this.statusBarEl = statusBarEl;
 		this.update('ObLLM: Ready');
 	}

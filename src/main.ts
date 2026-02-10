@@ -59,7 +59,7 @@ export default class ObLLMPlugin extends Plugin {
 		this.citationLinker = new CitationLinker();
 
 		const statusBarEl = this.addStatusBarItem();
-		this.statusBar = new StatusBarManager(this, statusBarEl);
+		this.statusBar = new StatusBarManager(statusBarEl);
 		this.statusBar.showReady(this.indexStore.chunkCount);
 
 		this.addSettingTab(new ObLLMSettingTab(this.app, this));
