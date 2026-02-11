@@ -4,19 +4,23 @@
 		"inlineSourceMap": true,
 		"inlineSources": true,
 		"module": "ESNext",
-		"target": "ES2018",
+		"target": "ES2022",
 		"allowJs": true,
 		"noImplicitAny": true,
-		"moduleResolution": "node",
+		"moduleResolution": "bundler",
 		"importHelpers": true,
 		"isolatedModules": true,
 		"strictNullChecks": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"types": [
+			"node",
+			"obsidian"
+		],
 		"lib": [
 			"DOM",
-			"ES5",
-			"ES6",
-			"ES7",
-			"ES2018"
+			"ES2022"
 		],
 		"outDir": "./dist",
 		"rootDir": "./src"

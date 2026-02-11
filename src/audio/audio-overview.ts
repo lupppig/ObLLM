@@ -21,13 +21,11 @@ export class AudioOverview {
 	): Promise<string> {
 		onStatus?.('Generating audio script...');
 
-		// Generate a podcast-style script from chunks
 		const prompt = this.promptBuilder.buildPrompt('audio', '', chunks);
 		const script = await this.llmProvider.generate({ prompt });
 
 		onStatus?.('Converting to speech...');
 
-		// Speak the script
 		await this.ttsEngine.speak(script);
 
 		return script;

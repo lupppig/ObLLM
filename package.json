@@ -1,6 +1,6 @@
 {
 	"name": "obllm",
-	"version": "0.1.0",
+	"version": "0.1.7",
 	"description": "ObLLM — A local-first LLM research assistant for Obsidian",
 	"main": "main.js",
 	"scripts": {
@@ -19,9 +19,8 @@
 	"author": "klein",
 	"license": "MIT",
 	"devDependencies": {
-		"@electron/rebuild": "^4.0.3",
-		"@types/better-sqlite3": "^7.6.13",
-		"@types/node": "^22.0.0",
+		"@types/keyv": "^4.2.0",
+		"@types/node": "^22.19.11",
 		"builtin-modules": "^4.0.0",
 		"esbuild": "^0.24.0",
 		"obsidian": "latest",
@@ -31,10 +30,8 @@
 	"dependencies": {
 		"@ai-sdk/google": "^3.0.23",
 		"@ai-sdk/openai": "^3.0.26",
+		"@sqliteai/sqlite-wasm": "^3.50.4-sync.0.8.63-vector.0.9.82",
 		"ai": "^6.0.78",
-		"better-sqlite3": "^12.6.2",
-		"ollama-ai-provider": "^1.2.0",
-		"pdf-parse": "^1.1.1",
-		"sqlite-vec": "0.1.7-alpha.2"
+		"pdf-parse": "^1.1.1"
 	}
 }

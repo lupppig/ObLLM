@@ -1,11 +1,10 @@
 export interface ObLLMSettings {
-	llmProvider: 'gemini' | 'openai' | 'ollama' | 'custom';
+	llmProvider: 'gemini' | 'openai' | 'custom';
 	apiKey: string;
 	apiBaseUrl: string;
 	model: string;
-	ollamaBaseUrl: string;
 
-	embeddingProvider: 'gemini' | 'openai' | 'ollama' | 'none';
+	embeddingProvider: 'gemini' | 'openai' | 'none';
 	embeddingModel: string;
 
 	indexedFolders: string[];
@@ -28,11 +27,10 @@ export const DEFAULT_SETTINGS: ObLLMSettings = {
 	llmProvider: 'gemini',
 	apiKey: '',
 	apiBaseUrl: '',
-	model: 'gemini-2.5-flash',
-	ollamaBaseUrl: 'http://localhost:11434/api',
+	model: 'gemini-2.0-flash',
 
 	embeddingProvider: 'gemini',
-	embeddingModel: 'gemini-embedding-001',
+	embeddingModel: 'text-embedding-004',
 
 	indexedFolders: [],
 	excludedFolders: [],

@@ -1,4 +1,4 @@
-import * as path from 'path';
+import sqlite3InitModule from '@sqliteai/sqlite-wasm';
 import type { Chunk } from '../scanner/chunker';
 
 export interface VectorSearchResult {
@@ -8,27 +8,51 @@ export interface VectorSearchResult {
 
 export class VectorDB {
 	private db: any;
+	private sqlite3: any;
 	private embeddingDimension: number;
-	private pluginDir: string;
 
-	constructor(pluginDir: string, embeddingDimension = 768, overrideDbPath?: string) {
-		this.pluginDir = pluginDir;
+	private constructor(sqlite3: any, db: any, embeddingDimension = 768) {
+		this.sqlite3 = sqlite3;
+		this.db = db;
 		this.embeddingDimension = embeddingDimension;
+	}
 
-		// Load native modules with absolute paths to bypass Obsidian's restricted module resolution
-		// eslint-disable-next-line @typescript-eslint/no-var-requires
-		const Database = require(path.join(pluginDir, 'node_modules', 'better-sqlite3'));
-		// eslint-disable-next-line @typescript-eslint/no-var-requires
-		const sqliteVec = require(path.join(pluginDir, 'node_modules', 'sqlite-vec'));
+	/**
+	 * Creates a new VectorDB instance.
+	 * If initialData is provided, it is loaded into the database.
+	 * wasmBinary can be provided to skip WASM file loading from disk/URL.
+	 */
+	static async create(embeddingDimension = 768, initialData?: Uint8Array, wasmBinary?: Uint8Array): Promise<VectorDB> {
+		const sqlite3 = await sqlite3InitModule({
+			wasmBinary: wasmBinary,
+			wasmBinaryFile: 'sqlite3.wasm',
+			locateFile: (path: string) => path,
+		} as any);
+		const db = new sqlite3.oo1.DB();
 
-		const dbPath = overrideDbPath || path.join(pluginDir, 'obllm.db');
-		this.db = new Database(dbPath);
-		this.db.pragma('journal_mode = WAL');
-		sqliteVec.load(this.db);
-		this.initSchema();
+		if (initialData && initialData.byteLength > 0) {
+			const p = sqlite3.wasm.alloc(initialData.byteLength);
+			sqlite3.wasm.heap8u().set(new Uint8Array(initialData), p);
+
+			// SQLITE_DESERIALIZE_FREEONCLOSE = 1
+			// SQLITE_DESERIALIZE_RESIZEABLE = 2
+			sqlite3.capi.sqlite3_deserialize(
+				db.pointer!,
+				'main',
+				p,
+				initialData.byteLength,
+				initialData.byteLength,
+				1 | 2
+			);
+		}
+
+		const vdb = new VectorDB(sqlite3, db, embeddingDimension);
+		vdb.initSchema();
+		return vdb;
 	}
 
 	private initSchema(): void {
+		// Base chunks table
 		this.db.exec(`
       CREATE TABLE IF NOT EXISTS chunks (
         id TEXT PRIMARY KEY,
@@ -42,115 +66,122 @@ export class VectorDB {
       CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
     `);
 
-		const vecTableExists = this.db
-			.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='chunk_embeddings'")
-			.get();
+		// sqlite-vector uses standard tables for embeddings
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS chunk_embeddings (
+				chunk_id TEXT PRIMARY KEY,
+				embedding BLOB
+			);
+		`);
 
-		if (!vecTableExists) {
-			this.db.exec(`
-        CREATE VIRTUAL TABLE chunk_embeddings USING vec0(
-          chunk_id TEXT PRIMARY KEY,
-          embedding float[${this.embeddingDimension}]
-        );
-      `);
-		}
+		// Initialize vector extension for the connection
+		// Note: sqlite-vector requires vector_init for search functions to work on a table
+		this.db.exec(`
+			SELECT vector_init(
+				'chunk_embeddings', 
+				'embedding', 
+				'dimension=${this.embeddingDimension},type=FLOAT32,distance=cosine'
+			);
+		`);
 	}
 
 	// ── Chunk CRUD ──
 
 	addChunks(chunks: Chunk[], filePath: string, mtime: number): void {
-		const deleteEmbeddings = this.db.prepare(
-			'DELETE FROM chunk_embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE source = ?)'
-		);
-		const deleteChunks = this.db.prepare('DELETE FROM chunks WHERE source = ?');
-		const insertChunk = this.db.prepare(
-			'INSERT OR REPLACE INTO chunks (id, source, heading, text, start_offset, end_offset, mtime) VALUES (?, ?, ?, ?, ?, ?, ?)'
-		);
+		this.db.transaction(() => {
+			this.db.exec({
+				sql: 'DELETE FROM chunk_embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE source = ?)',
+				bind: [filePath]
+			});
+			this.db.exec({
+				sql: 'DELETE FROM chunks WHERE source = ?',
+				bind: [filePath]
+			});
 
-		const txn = this.db.transaction(() => {
-			deleteEmbeddings.run(filePath);
-			deleteChunks.run(filePath);
-			for (const chunk of chunks) {
-				insertChunk.run(
-					chunk.id, chunk.source, chunk.heading ?? null,
-					chunk.text, chunk.startOffset, chunk.endOffset, mtime
-				);
+			const stmt = this.db.prepare(
+				'INSERT OR REPLACE INTO chunks (id, source, heading, text, start_offset, end_offset, mtime) VALUES (?, ?, ?, ?, ?, ?, ?)'
+			);
+			try {
+				for (const chunk of chunks) {
+					stmt.bind([
+						chunk.id, chunk.source, chunk.heading ?? null,
+						chunk.text, chunk.startOffset, chunk.endOffset, mtime
+					]).stepReset();
+				}
+			} finally {
+				stmt.finalize();
 			}
 		});
-		txn();
 	}
 
 	removeChunksForFile(filePath: string): void {
-		const txn = this.db.transaction(() => {
-			const ids = this.db
-				.prepare('SELECT id FROM chunks WHERE source = ?')
-				.all(filePath) as { id: string }[];
+		this.db.transaction(() => {
+			const ids = this.db.selectValues('SELECT id FROM chunks WHERE source = ?', [filePath]);
 
 			if (ids.length > 0) {
 				const placeholders = ids.map(() => '?').join(',');
-				this.db.prepare(`DELETE FROM chunk_embeddings WHERE chunk_id IN (${placeholders})`)
-					.run(...ids.map((r: any) => r.id));
+				this.db.exec({
+					sql: `DELETE FROM chunk_embeddings WHERE chunk_id IN (${placeholders})`,
+					bind: ids
+				});
 			}
-			this.db.prepare('DELETE FROM chunks WHERE source = ?').run(filePath);
+			this.db.exec({
+				sql: 'DELETE FROM chunks WHERE source = ?',
+				bind: [filePath]
+			});
 		});
-		txn();
 	}
 
 	getAllChunks(): Chunk[] {
-		const rows = this.db.prepare('SELECT * FROM chunks').all() as any[];
+		const rows = this.db.selectObjects('SELECT * FROM chunks');
 		return rows.map(this.rowToChunk);
 	}
 
 	getChunkById(id: string): Chunk | undefined {
-		const row = this.db.prepare('SELECT * FROM chunks WHERE id = ?').get(id) as any;
+		const row = this.db.selectObject('SELECT * FROM chunks WHERE id = ?', [id]);
 		return row ? this.rowToChunk(row) : undefined;
 	}
 
 	getChunksBySource(source: string): Chunk[] {
-		const rows = this.db.prepare('SELECT * FROM chunks WHERE source = ?').all(source) as any[];
+		const rows = this.db.selectObjects('SELECT * FROM chunks WHERE source = ?', [source]);
 		return rows.map(this.rowToChunk);
 	}
 
 	getFileTimestamp(filePath: string): number | undefined {
-		const row = this.db
-			.prepare('SELECT mtime FROM chunks WHERE source = ? LIMIT 1')
-			.get(filePath) as { mtime: number } | undefined;
-		return row?.mtime;
+		return this.db.selectValue('SELECT mtime FROM chunks WHERE source = ? LIMIT 1', [filePath]);
 	}
 
 	get chunkCount(): number {
-		const row = this.db.prepare('SELECT COUNT(*) as cnt FROM chunks').get() as { cnt: number };
-		return row.cnt;
+		return this.db.selectValue('SELECT COUNT(*) FROM chunks') as number;
 	}
 
 	// ── Embedding Storage & Vector Search ──
 
-	storeEmbedding(chunkId: string, embedding: number[]): void {
-		this.db.prepare(
-			'INSERT OR REPLACE INTO chunk_embeddings (chunk_id, embedding) VALUES (?, ?)'
-		).run(chunkId, this.float32ArrayToBuffer(embedding));
-	}
-
 	storeEmbeddings(entries: { chunkId: string; embedding: number[] }[]): void {
-		const stmt = this.db.prepare(
-			'INSERT OR REPLACE INTO chunk_embeddings (chunk_id, embedding) VALUES (?, ?)'
-		);
-		const txn = this.db.transaction(() => {
-			for (const entry of entries) {
-				stmt.run(entry.chunkId, this.float32ArrayToBuffer(entry.embedding));
+		this.db.transaction(() => {
+			const stmt = this.db.prepare(
+				'INSERT OR REPLACE INTO chunk_embeddings (chunk_id, embedding) VALUES (?, ?)'
+			);
+			try {
+				for (const entry of entries) {
+					const floatArr = new Float32Array(entry.embedding);
+					stmt.bind([
+						entry.chunkId,
+						floatArr.buffer as ArrayBuffer
+					]).stepReset();
+				}
+			} finally {
+				stmt.finalize();
 			}
 		});
-		txn();
 	}
 
 	hasEmbedding(chunkId: string): boolean {
-		return !!this.db
-			.prepare('SELECT chunk_id FROM chunk_embeddings WHERE chunk_id = ?')
-			.get(chunkId);
+		return !!this.db.selectValue('SELECT chunk_id FROM chunk_embeddings WHERE chunk_id = ?', [chunkId]);
 	}
 
 	vectorSearch(queryEmbedding: number[], topK: number, sourceFilter?: string[]): VectorSearchResult[] {
-		const queryBuf = this.float32ArrayToBuffer(queryEmbedding);
+		const queryArr = new Float32Array(queryEmbedding);
 
 		let sql: string;
 		let params: any[];
@@ -158,33 +189,68 @@ export class VectorDB {
 		if (sourceFilter && sourceFilter.length > 0) {
 			const placeholders = sourceFilter.map(() => '?').join(',');
 			sql = `
-        SELECT ce.chunk_id, ce.distance, c.*
+        SELECT ce.chunk_id, v.distance, c.*
         FROM chunk_embeddings ce
         JOIN chunks c ON c.id = ce.chunk_id
-        WHERE ce.embedding MATCH ? AND k = ?
-          AND c.source IN (${placeholders})
-        ORDER BY ce.distance
+        JOIN vector_full_scan(
+					'chunk_embeddings',
+					'embedding',
+					?,
+					?
+				) v ON ce.rowid = v.rowid
+        WHERE c.source IN (${placeholders})
+        ORDER BY v.distance
       `;
-			params = [queryBuf, topK, ...sourceFilter];
+			params = [queryArr.buffer as ArrayBuffer, topK, ...sourceFilter];
 		} else {
 			sql = `
-        SELECT ce.chunk_id, ce.distance, c.*
+        SELECT ce.chunk_id, v.distance, c.*
         FROM chunk_embeddings ce
         JOIN chunks c ON c.id = ce.chunk_id
-        WHERE ce.embedding MATCH ? AND k = ?
-        ORDER BY ce.distance
+        JOIN vector_full_scan(
+					'chunk_embeddings',
+					'embedding',
+					?,
+					?
+				) v ON ce.rowid = v.rowid
+        ORDER BY v.distance
       `;
-			params = [queryBuf, topK];
+			params = [queryArr.buffer as ArrayBuffer, topK];
 		}
 
-		const rows = this.db.prepare(sql).all(...params) as any[];
+		const rows = this.db.selectObjects(sql, params);
 		return rows.map((row: any) => ({
 			chunk: this.rowToChunk(row),
 			distance: row.distance,
 		}));
 	}
 
-	// ── Utilities ──
+	// ── Persistence & Utilities ──
+
+	/**
+	 * Exports the database as a Uint8Array for persistence.
+	 */
+	export(): Uint8Array {
+		const capi = this.sqlite3.capi;
+		const wasm = this.sqlite3.wasm;
+		const dbPtr = this.db.pointer!;
+
+		const pSize = wasm.alloc(8);
+		try {
+			const pData = capi.sqlite3_serialize(dbPtr, 'main', pSize, 0);
+			if (pData === 0) return new Uint8Array(0);
+
+			const sizeRaw = wasm.getPtrValue(pSize, 'i32');
+			const size = Array.isArray(sizeRaw) ? sizeRaw[0] : sizeRaw;
+
+			const bytes = new Uint8Array(wasm.heap8u().buffer, pData, size).slice();
+			capi.sqlite3_free(pData);
+
+			return bytes;
+		} finally {
+			wasm.dealloc(pSize);
+		}
+	}
 
 	clear(): void {
 		this.db.exec('DELETE FROM chunk_embeddings');
@@ -204,10 +270,5 @@ export class VectorDB {
 			startOffset: row.start_offset,
 			endOffset: row.end_offset,
 		};
-	}
-
-	private float32ArrayToBuffer(arr: number[]): Buffer {
-		const float32 = new Float32Array(arr);
-		return Buffer.from(float32.buffer);
 	}
 }

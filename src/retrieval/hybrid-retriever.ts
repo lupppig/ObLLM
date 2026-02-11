@@ -1,8 +1,8 @@
 import type { Retriever, ScoredChunk } from './retriever';
 
 export class HybridRetriever implements Retriever {
-	private keywordRetriever: Retriever;
-	private embeddingRetriever: Retriever;
+	public keywordRetriever: Retriever;
+	public embeddingRetriever: Retriever;
 	private keywordWeight: number;
 
 	constructor(

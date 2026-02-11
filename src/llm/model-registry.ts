@@ -1,21 +1,18 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
-import { createOllama } from 'ollama-ai-provider';
 import type { ObLLMSettings } from '../settings';
 
-export type ProviderType = 'gemini' | 'openai' | 'ollama' | 'custom';
+export type ProviderType = 'gemini' | 'openai' | 'custom';
 
 const DEFAULT_MODELS: Record<ProviderType, string> = {
-	gemini: 'gemini-2.5-flash',
+	gemini: 'gemini-2.0-flash',
 	openai: 'gpt-4o-mini',
-	ollama: 'llama3.2',
 	custom: 'gpt-4o-mini',
 };
 
 const DEFAULT_EMBEDDING_MODELS: Record<string, string> = {
-	gemini: 'gemini-embedding-001',
+	gemini: 'text-embedding-004',
 	openai: 'text-embedding-3-small',
-	ollama: 'nomic-embed-text',
 };
 
 export class ModelRegistry {
@@ -40,13 +37,6 @@ export class ModelRegistry {
 				return openai(modelName);
 			}
 
-			case 'ollama': {
-				const ollama = createOllama({
-					baseURL: settings.ollamaBaseUrl || 'http://localhost:11434/api',
-				});
-				return ollama(modelName);
-			}
-
 			case 'custom': {
 				const custom = createOpenAI({
 					apiKey: settings.apiKey,
@@ -56,7 +46,11 @@ export class ModelRegistry {
 			}
 
 			default:
-				throw new Error(`Unknown provider: ${provider}`);
+				// Fallback to Gemini if provider is missing or was Ollama
+				const google = createGoogleGenerativeAI({
+					apiKey: settings.apiKey,
+				});
+				return google(DEFAULT_MODELS.gemini);
 		}
 	}
 
@@ -83,13 +77,6 @@ export class ModelRegistry {
 					baseURL: settings.apiBaseUrl || undefined,
 				});
 				return openai.textEmbeddingModel(modelName);
-			}
-
-			case 'ollama': {
-				const ollama = createOllama({
-					baseURL: settings.ollamaBaseUrl || 'http://localhost:11434/api',
-				});
-				return ollama.textEmbeddingModel(modelName);
 			}
 
 			default:

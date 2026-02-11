@@ -24,3 +24,7 @@ Thumbs.db
 
 # Skill doc (internal reference only)
 SKILL.md
+
+# ObLLM Storage
+obllm.db
+sqlite3.wasm

@@ -27,7 +27,6 @@ export class ObLLMSettingTab extends PluginSettingTab {
 				dropdown
 					.addOption('gemini', 'Gemini AI')
 					.addOption('openai', 'OpenAI')
-					.addOption('ollama', 'Ollama')
 					.addOption('custom', 'Custom')
 					.setValue(this.host.settings.llmProvider)
 					.onChange(async (value) => {
@@ -63,25 +62,14 @@ export class ObLLMSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
-			.setName('Ollama Base URL')
-			.setDesc('Base URL for Ollama server (only used with Ollama provider).')
-			.addText((text) =>
-				text
-					.setPlaceholder('http://localhost:11434/api')
-					.setValue(this.host.settings.ollamaBaseUrl)
-					.onChange(async (value) => {
-						this.host.settings.ollamaBaseUrl = value;
-						await this.host.saveSettings();
-					})
-			);
+
 
 		new Setting(containerEl)
 			.setName('Model')
 			.setDesc('Model name to use for generation.')
 			.addText((text) =>
 				text
-					.setPlaceholder('gemini-2.5-flash')
+					.setPlaceholder('gemini-2.0-flash')
 					.setValue(this.host.settings.model)
 					.onChange(async (value) => {
 						this.host.settings.model = value;
@@ -98,7 +86,6 @@ export class ObLLMSettingTab extends PluginSettingTab {
 				dropdown
 					.addOption('gemini', 'Gemini AI')
 					.addOption('openai', 'OpenAI')
-					.addOption('ollama', 'Ollama')
 					.addOption('none', 'None (keyword only)')
 					.setValue(this.host.settings.embeddingProvider)
 					.onChange(async (value) => {
@@ -112,7 +99,7 @@ export class ObLLMSettingTab extends PluginSettingTab {
 			.setDesc('Model to use for embeddings.')
 			.addText((text) =>
 				text
-					.setPlaceholder('gemini-embedding-001')
+					.setPlaceholder('text-embedding-004')
 					.setValue(this.host.settings.embeddingModel)
 					.onChange(async (value) => {
 						this.host.settings.embeddingModel = value;

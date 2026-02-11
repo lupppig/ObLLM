@@ -32,19 +32,32 @@ export class PromptBuilder {
 		chunks: ScoredChunk[],
 		history: ConversationHistory
 	): string {
-		const sources = this.formatSources(chunks);
+		const sources = chunks.length > 0 ? this.formatSources(chunks) : 'No specific notes found for this query.';
 		const conversationContext = history.formatForPrompt();
 
 		return [
-			'You are a research assistant grounded in the user\'s notes.',
-			'Answer using ONLY the sources below. Cite facts using [number].',
-			'If the answer is not in the sources, say "I don\'t know based on your notes."',
+			'You are ObLLM, a proactive AI research agent living inside the user\'s Obsidian vault.',
+			'Your goal is to be a natural collaborator who curates and implements research.',
 			'',
-			...(conversationContext ? ['Previous conversation:', conversationContext, ''] : []),
-			'Sources:',
+			'Core Behaviors:',
+			'1. Context: ALWAYS ground answers in the provided notes, citing with [number].',
+			'2. Naturalness: Respond naturally to greetings (e.g., "hi", "how are you").',
+			'3. Proactive Research: If asked to research a topic, suggest a plan first.',
+			'4. Agency (Implement): You can suggest creating new notes. When you want to propose a new note to the user, use this exact format at the END of your message:',
+			'',
+			'```note',
+			'Title: [Short Descriptive Title]',
+			'Content: [The markdown content of the note]',
+			'```',
+			'',
+			'Style: Intellectual curiosity. Suggest links between notes. Suggest new tags or folders.',
+			'',
+			...(conversationContext ? ['### Previous Conversation:', conversationContext, ''] : []),
+			'### Contextual Notes:',
 			sources,
 			'',
 			`User: ${query}`,
+			'ObLLM:',
 		].join('\n');
 	}
 
@@ -63,15 +76,17 @@ export class PromptBuilder {
 
 	private qaPrompt(query: string, sources: string): string {
 		return [
-			'You are a research assistant.',
-			'Answer the question using ONLY the sources below.',
-			'Cite each fact using [number] and include the source.',
-			'If the answer is not in the sources, say "I don\'t know based on your notes."',
+			'You are ObLLM, a research agent.',
+			'Answer the following question using the user\'s notes as context. If the answer is in the notes, ALWAYS cite them using [number].',
+			'If the answer is not in the notes, provide a helpful general response and explain how it might relate to their existing knowledge.',
+			'Never simply say "I don\'t know" for greetings or common questions.',
 			'',
 			`Question: ${query}`,
 			'',
-			'Sources:',
-			sources,
+			'### Related Notes:',
+			sources || 'No relevant notes found in vault.',
+			'',
+			'ObLLM:',
 		].join('\n');
 	}
 

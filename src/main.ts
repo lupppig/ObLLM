@@ -16,10 +16,12 @@ import type { LLMProvider } from './llm/provider';
 import { PromptBuilder } from './prompt/prompt-builder';
 import { CitationLinker } from './prompt/citation-linker';
 import { SuggestedQuestions } from './prompt/suggested-questions';
-import { ChatModal } from './ui/chat-modal';
+import { ChatView, VIEW_TYPE_OBLLM } from './ui/chat-view';
+import { ConversationHistory } from './ui/conversation';
 import { StatusBarManager } from './ui/status-bar';
 import { AudioOverview } from './audio/audio-overview';
 import { createTTSEngine } from './audio/tts-engine';
+import { WorkspaceLeaf } from 'obsidian';
 
 export default class ObLLMPlugin extends Plugin {
 	settings!: ObLLMSettings;
@@ -38,18 +40,37 @@ export default class ObLLMPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
+		this.registerView(
+			VIEW_TYPE_OBLLM,
+			(leaf) => new ChatView(leaf)
+		);
+
 		this.scanner = new VaultScanner(this.app, this.settings);
 		this.chunker = new Chunker({
 			chunkSize: this.settings.chunkSize,
 			chunkOverlap: this.settings.chunkOverlap,
 		});
 
-		let pluginDir = this.manifest.dir!;
-		if (this.app.vault.adapter instanceof FileSystemAdapter) {
-			pluginDir = path.join(this.app.vault.adapter.getBasePath(), this.manifest.dir!);
+		const dbPath = path.join(this.manifest.dir!, 'obllm.db');
+		const wasmPath = path.join(this.manifest.dir!, 'sqlite3.wasm');
+		let initialData: Uint8Array | undefined;
+		let wasmBinary: Uint8Array | undefined;
+
+		try {
+			if (await this.app.vault.adapter.exists(dbPath)) {
+				const buffer = await this.app.vault.adapter.readBinary(dbPath);
+				initialData = new Uint8Array(buffer);
+			}
+
+			if (await this.app.vault.adapter.exists(wasmPath)) {
+				const buffer = await this.app.vault.adapter.readBinary(wasmPath);
+				wasmBinary = new Uint8Array(buffer);
+			}
+		} catch (err) {
+			console.error('ObLLM: Failed to load existing database or WASM:', err);
 		}
 
-		this.db = new VectorDB(pluginDir);
+		this.db = await VectorDB.create(768, initialData, wasmBinary);
 		this.indexStore = new IndexStore(this.db);
 
 		this.llmProvider = this.createLLMProvider();
@@ -62,14 +83,29 @@ export default class ObLLMPlugin extends Plugin {
 		this.statusBar = new StatusBarManager(statusBarEl);
 		this.statusBar.showReady(this.indexStore.chunkCount);
 
+		this.addRibbonIcon('brain', 'ObLLM Chat', () => {
+			this.openChat();
+		});
+
 		this.addSettingTab(new ObLLMSettingTab(this.app, this));
 
 		// ── Commands ──
 
 		this.addCommand({
-			id: 'index-vault',
-			name: 'Index vault',
-			callback: () => this.indexVault(),
+			id: 'show-debug-info',
+			name: 'Show debug info',
+			callback: () => {
+				const adapter = this.app.vault.adapter as any;
+				console.log('ObLLM: Debug Info', {
+					vaultName: this.app.vault.getName(),
+					vaultPath: adapter.getBasePath ? adapter.getBasePath() : 'unknown',
+					settings: this.settings,
+					chunks: this.indexStore.chunkCount,
+					dbReady: !!this.db,
+					manifest: this.manifest,
+				});
+				new Notice('ObLLM: Debug info logged to console (Ctrl+Shift+I)');
+			}
 		});
 
 		this.addCommand({
@@ -79,51 +115,9 @@ export default class ObLLMPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: 'explain-note',
-			name: 'Explain this note',
-			callback: () => this.explainCurrentNote(),
-		});
-
-		this.addCommand({
-			id: 'summarize-notes',
-			name: 'Summarize notes',
-			callback: () => this.generateDocument('summary'),
-		});
-
-		this.addCommand({
-			id: 'generate-study-guide',
-			name: 'Generate study guide',
-			callback: () => this.generateDocument('study-guide'),
-		});
-
-		this.addCommand({
-			id: 'generate-faq',
-			name: 'Generate FAQ',
-			callback: () => this.generateDocument('faq'),
-		});
-
-		this.addCommand({
-			id: 'generate-briefing',
-			name: 'Generate briefing doc',
-			callback: () => this.generateDocument('briefing'),
-		});
-
-		this.addCommand({
-			id: 'suggest-ideas',
-			name: 'Suggest ideas & insights',
-			callback: () => this.generateDocument('ideation'),
-		});
-
-		this.addCommand({
-			id: 'combine-sources',
-			name: 'Combine insights from multiple sources',
-			callback: () => this.combineSources(),
-		});
-
-		this.addCommand({
-			id: 'audio-overview',
-			name: 'Generate audio overview',
-			callback: () => this.generateAudioOverview(),
+			id: 'index-vault',
+			name: 'Index vault',
+			callback: () => this.indexVault(),
 		});
 
 		// ── File watchers ──
@@ -141,10 +135,29 @@ export default class ObLLMPlugin extends Plugin {
 				this.indexStore.removeChunksForFile(file.path);
 			})
 		);
+
+		// Trigger initial indexing when workspace is ready
+		this.app.workspace.onLayoutReady(() => {
+			this.indexVault();
+		});
 	}
 
-	onunload() {
-		if (this.db) this.db.close();
+	async onunload() {
+		if (this.db) {
+			await this.saveDatabase();
+			this.db.close();
+		}
+	}
+
+	async saveDatabase() {
+		if (!this.db) return;
+		try {
+			const data = this.db.export();
+			const dbPath = path.join(this.manifest.dir!, 'obllm.db');
+			await this.app.vault.adapter.writeBinary(dbPath, data.buffer as ArrayBuffer);
+		} catch (err) {
+			console.error('ObLLM: Failed to save database:', err);
+		}
 	}
 
 	async loadSettings() {
@@ -162,7 +175,6 @@ export default class ObLLMPlugin extends Plugin {
 		});
 	}
 
-	// ── Factory methods ──
 
 	private createLLMProvider(): LLMProvider {
 		return new UnifiedProvider(this.settings);
@@ -186,7 +198,7 @@ export default class ObLLMPlugin extends Plugin {
 
 	// ── Incremental indexing ──
 
-	private async onFileChanged(path: string, extension: string) {
+	private async onFileChanged(filePath: string, extension: string) {
 		const ext = '.' + extension;
 		if (!this.settings.supportedExtensions.includes(ext)) return;
 
@@ -194,16 +206,17 @@ export default class ObLLMPlugin extends Plugin {
 			const reader = getFileReader(extension);
 			let content: string | ArrayBuffer;
 			if (extension === 'pdf') {
-				content = await this.scanner.readFileBinary(path);
+				content = await this.scanner.readFileBinary(filePath);
 			} else {
-				content = await this.scanner.readFileContent(path);
+				content = await this.scanner.readFileContent(filePath);
 			}
 			const result = await reader.read(content);
-			const chunks = this.chunker.chunk(result.text, path, result.headings);
-			this.indexStore.addChunks(chunks, path, Date.now());
+			const chunks = this.chunker.chunk(result.text, filePath, result.headings);
+			this.indexStore.addChunks(chunks, filePath, Date.now());
+			await this.saveDatabase();
 			this.statusBar.showReady(this.indexStore.chunkCount);
 		} catch (err: any) {
-			console.error(`ObLLM: Failed to re-index ${path}:`, err);
+			console.error(`ObLLM: Failed to re-index ${filePath}:`, err);
 		}
 	}
 
@@ -211,6 +224,12 @@ export default class ObLLMPlugin extends Plugin {
 
 	private async indexVault() {
 		const files = this.scanner.getFiles();
+		console.log('ObLLM: Indexing settings:', {
+			supportedExtensions: this.settings.supportedExtensions,
+			indexedFolders: this.settings.indexedFolders,
+			excludedFolders: this.settings.excludedFolders,
+		});
+		console.log(`ObLLM: Found ${files.length} supported files in vault.`);
 		new Notice(`ObLLM: Indexing ${files.length} files...`);
 
 		let processed = 0;
@@ -239,105 +258,233 @@ export default class ObLLMPlugin extends Plugin {
 			}
 		}
 
+		await this.saveDatabase();
 		this.statusBar.showReady(this.indexStore.chunkCount);
 		new Notice(`ObLLM: Indexed ${processed} files (${this.indexStore.chunkCount} chunks)`);
+
+		// Background embedding pass
+		if (this.retriever instanceof EmbeddingRetriever) {
+			this.retriever.ensureEmbeddings().catch(e => console.error('ObLLM: Background embedding error:', e));
+		} else if (this.retriever instanceof HybridRetriever) {
+			(this.retriever.embeddingRetriever as EmbeddingRetriever).ensureEmbeddings().catch(e => console.error('ObLLM: Background embedding error:', e));
+		}
 	}
 
 	// ── Chat ──
 
-	private openChat() {
-		const allSources = [...new Set(this.indexStore.getAllChunks().map((c) => c.source))];
+	private async activateView() {
+		const { workspace } = this.app;
 
-		const modal = new ChatModal(this.app, {
-			onSubmit: async (query: string, sourceFilter?: string[]) => {
-				const chunks = await this.retriever.search(query, this.settings.maxChunks);
-				const filtered = sourceFilter
-					? chunks.filter((sc) => sourceFilter.includes(sc.chunk.source))
-					: chunks;
+		let leaf: WorkspaceLeaf | null = null;
+		const leaves = workspace.getLeavesOfType(VIEW_TYPE_OBLLM);
 
-				if (filtered.length === 0) {
-					modal.setResponse('No relevant notes found. Try indexing your vault first.');
+		if (leaves.length > 0) {
+			leaf = leaves[0];
+		} else {
+			leaf = workspace.getRightLeaf(false);
+			await leaf!.setViewState({ type: VIEW_TYPE_OBLLM, active: true });
+		}
+
+		workspace.revealLeaf(leaf!);
+		return leaf!.view as ChatView;
+	}
+
+	private async openChat() {
+		const view = await this.activateView();
+
+		view.onCheckHealth = async () => {
+			return await this.llmProvider.checkHealth!();
+		};
+
+		view.onSuggestQuestions = async () => {
+			const chunks = this.indexStore.getAllChunks();
+			const scored: ScoredChunk[] = chunks.slice(0, 10).map(c => ({ chunk: c, score: 1 }));
+			return await this.suggestedQuestions.generate(scored);
+		};
+
+		view.onSubmit = async (query: string, history: ConversationHistory) => {
+			console.log('ObLLM: Chat submitted', { query });
+			view.setStatus('Pre-flight check...');
+
+			// 0. Pre-flight Provider Check
+			if (this.llmProvider.checkHealth) {
+				const health = await this.llmProvider.checkHealth();
+				if (!health.ok) {
+					console.error('ObLLM: Pre-flight health check failed:', health.message);
+					view.setStatus('Provider Offline');
+					new Notice(`ObLLM: Provider is unreachable. ${health.message}`, 10000);
+					throw new Error(`Provider Offline: ${health.message}`);
+				}
+			}
+
+			const lowerQuery = query.toLowerCase();
+
+			const audioRegex = /\b(audio|podcast|speech|listen|voice|talk)\b/i;
+			if (audioRegex.test(lowerQuery) || lowerQuery.includes('audio overview')) {
+				console.log('ObLLM: Intent: Audio Overview');
+				view.setStatus('Audio Intent Detected');
+				const chunks = this.indexStore.getAllChunks();
+				if (chunks.length > 0) {
+					console.log('ObLLM: Found chunks for audio, starting generation');
+					const scored: ScoredChunk[] = chunks.slice(0, 20).map(c => ({ chunk: c, score: 1 }));
+					await this.generateAudioOverview(scored);
+					return;
+				} else {
+					console.warn('ObLLM: No chunks found for audio');
+					new Notice('ObLLM: No indexed notes found to create a podcast from.');
 					return;
 				}
+			}
 
-				const prompt = this.promptBuilder.buildPrompt('qa', query, filtered);
-				const response = await this.llmProvider.generate({
+			// 2. Standard Agent Flow (General Chat + Research)
+			console.log('ObLLM: Intent: Standard Agent Flow');
+			this.setEmbeddingPause(true);
+			await new Promise(resolve => setTimeout(resolve, 300)); // Grace period for Ollama to finish current chunk
+
+			const superTimeout = setTimeout(() => {
+				console.error('ObLLM: Super Timeout (60s) triggered in onSubmit');
+				view.resetGenerating();
+				new Notice('ObLLM: The agent took too long to respond. Force-resetting state.');
+			}, 60000);
+
+			try {
+				let chunks: ScoredChunk[] = [];
+				const isGreeting = lowerQuery.length < 10 && (lowerQuery.includes('hi') || lowerQuery.includes('hello') || lowerQuery.includes('hey'));
+
+				if (!isGreeting) {
+					console.log('ObLLM: Starting retrieval');
+					view.setStatus('Searching notes...');
+					view.setLoaderText('Searching your notes...');
+					chunks = await this.retriever.search(query, this.settings.maxChunks);
+					console.log('ObLLM: Retrieval complete', { chunkCount: chunks.length });
+					view.setStatus(`Found ${chunks.length} chunks`);
+				} else {
+					console.log('ObLLM: Query is a greeting, bypassing retrieval');
+					view.setStatus('Greeting - bypassing search');
+				}
+
+				view.setStatus('Building prompt...');
+				view.setLoaderText('ObLLM is thinking...');
+				const prompt = this.promptBuilder.buildConversationPrompt(query, chunks, history);
+				console.log('ObLLM: Prompt built, length:', prompt.length);
+				view.setStatus(`Prompt size: ${prompt.length} chars`);
+
+				console.log('ObLLM: Calling LLMProvider.generate...');
+				view.setStatus('Handover to AI SDK...');
+				let fullResponse = '';
+				await this.llmProvider.generate({
 					prompt,
 					stream: true,
-					onToken: (token) => modal.appendToken(token),
+					onToken: (token) => {
+						if (!fullResponse) {
+							console.log('ObLLM: First token actually received in main');
+							view.setStatus('Receiving tokens...');
+						}
+						fullResponse += token;
+						view.appendToken(token);
+					},
+					onError: (err: any) => {
+						console.error('ObLLM: LLM Error caught in main:', err);
+						view.setStatus(`Fatal Error: ${err.message}`);
+						new Notice(`ObLLM Error: ${err.message}`);
+					}
 				});
 
-				const withCitations = this.citationLinker.linkCitations(response, filtered);
-				modal.setResponse(withCitations);
-			},
-			onSuggestQuestions: async () => {
-				const chunks = this.indexStore.getAllChunks();
-				if (chunks.length === 0) return [];
-				const scored: ScoredChunk[] = chunks
-					.slice(0, 20)
-					.map((c) => ({ chunk: c, score: 1 }));
-				return this.suggestedQuestions.generate(scored);
-			},
-			sources: allSources,
-		});
+				if (fullResponse.length === 0) {
+					console.warn('ObLLM: AI finished but returned zero characters');
+					view.setStatus('AI returned empty response');
+				}
+				console.log('ObLLM: LLM response finished');
 
-		modal.open();
+				// Apply interactive citation linking
+				console.log('ObLLM: Linking citations');
+				view.setStatus('Linking citations...');
+				const linkedResponse = this.citationLinker.linkCitations(fullResponse, chunks);
+				view.finishResponse(linkedResponse, chunks);
+				console.log('ObLLM: Response finished and rendered');
+				view.setStatus('Done');
+
+				// Detect note creation blocks (Agency)
+				const noteRegex = /```note\nTitle: (.*)\nContent: ([\s\S]*?)```/g;
+				let match;
+				while ((match = noteRegex.exec(fullResponse)) !== null) {
+					const title = match[1].trim();
+					const content = match[2].trim();
+					view.addActionButton(`Create Note: ${title}`, () => {
+						this.createNoteFromAgent(title, content);
+					});
+				}
+			} catch (err: any) {
+				console.error('ObLLM: Primary onSubmit Error:', err);
+				view.setStatus(`Error: ${err.message}`);
+				new Notice(`ObLLM Error: ${err.message}`);
+				view.finishResponse(`Error: ${err.message}`, []);
+			} finally {
+				clearTimeout(superTimeout);
+				this.setEmbeddingPause(false);
+				console.log('ObLLM: Chat flow finalized (finally block)');
+			}
+		};
+	}
+
+	private setEmbeddingPause(paused: boolean) {
+		const r = this.retriever;
+		if (r instanceof EmbeddingRetriever) {
+			r.pauseBackgroundWork(paused);
+		} else if (r instanceof HybridRetriever) {
+			(r.embeddingRetriever as EmbeddingRetriever).pauseBackgroundWork(paused);
+		}
+	}
+
+	public async createNoteFromAgent(title: string, content: string) {
+		const fileName = `${title.replace(/[\\/:*?"<>|]/g, '')}.md`;
+		try {
+			const file = await this.app.vault.create(fileName, content);
+			const leaf = this.app.workspace.getLeaf(false);
+			await leaf.openFile(file);
+			new Notice(`ObLLM: Created note "${title}"`);
+		} catch (err: any) {
+			new Notice(`Error creating note: ${err.message}`);
+		}
 	}
 
 	// ── Explain current note ──
 
 	private async explainCurrentNote() {
+		const view = await this.activateView();
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile) {
-			new Notice('ObLLM: No active file to explain.');
+			new Notice('No active file to explain.');
 			return;
 		}
 
-		const content = await this.app.vault.cachedRead(activeFile);
+		const content = await this.app.vault.read(activeFile);
 		const chunks = this.chunker.chunk(content, activeFile.path);
 		const scored: ScoredChunk[] = chunks.map((c) => ({ chunk: c, score: 1 }));
 
-		const prompt = this.promptBuilder.buildPrompt('explain', '', scored);
+		view.appendToken(`### Explaining: ${activeFile.basename}\n\n`);
 
-		const modal = new ChatModal(this.app, {
-			onSubmit: async (query: string) => {
-				const followUpChunks = await this.retriever.search(query, this.settings.maxChunks);
-				const allChunks = [...scored, ...followUpChunks];
-				const followUpPrompt = this.promptBuilder.buildPrompt('qa', query, allChunks);
+		const prompt = this.promptBuilder.buildPrompt('qa', `Explain this note: ${activeFile.path}`, scored);
 
-				const response = await this.llmProvider.generate({
-					prompt: followUpPrompt,
-					stream: true,
-					onToken: (token) => modal.appendToken(token),
-				});
-				const withCitations = this.citationLinker.linkCitations(response, allChunks);
-				modal.setResponse(withCitations);
-			},
-			onSuggestQuestions: async () => {
-				return this.suggestedQuestions.generate(scored);
-			},
-			sources: [activeFile.path],
-		});
-
-		modal.open();
-
-		// Stream initial explanation
-		new Notice(`ObLLM: Explaining ${activeFile.basename}...`);
-		const response = await this.llmProvider.generate({
+		await this.llmProvider.generate({
 			prompt,
 			stream: true,
-			onToken: (token) => modal.appendToken(token),
+			onToken: (token) => view.appendToken(token),
+			onError: (err: any) => {
+				console.error('ObLLM: LLM Error:', err);
+				new Notice(`ObLLM Error: ${err.message}`);
+			}
 		});
-		const withCitations = this.citationLinker.linkCitations(response, scored);
-		modal.setResponse(withCitations);
 	}
 
 	// ── Document generation (summary, study guide, FAQ, briefing, ideation) ──
 
 	private async generateDocument(template: 'summary' | 'study-guide' | 'faq' | 'briefing' | 'ideation') {
+		const view = await this.activateView();
 		const chunks = this.indexStore.getAllChunks();
+
 		if (chunks.length === 0) {
-			new Notice('ObLLM: No indexed notes. Run "Index vault" first.');
+			new Notice('ObLLM: No indexed notes found.');
 			return;
 		}
 
@@ -354,70 +501,74 @@ export default class ObLLMPlugin extends Plugin {
 		};
 
 		const label = labels[template];
-		new Notice(`ObLLM: Generating ${label}...`);
+		view.appendToken(`### Generating ${label}...\n\n`);
 
-		const prompt = this.promptBuilder.buildPrompt(template, '', scored);
-		const response = await this.llmProvider.generate({ prompt });
-		const withCitations = this.citationLinker.linkCitations(response, scored);
+		const prompt = this.promptBuilder.buildPrompt(template, 'Generate based on my notes', scored);
 
-		const file = await this.app.vault.create(
-			`ObLLM ${label} - ${new Date().toISOString().slice(0, 10)}.md`,
-			withCitations
-		);
-		const leaf = this.app.workspace.getLeaf(false);
-		await leaf.openFile(file);
-		new Notice(`ObLLM: ${label} created!`);
+		await this.llmProvider.generate({
+			prompt,
+			stream: true,
+			onToken: (token) => view.appendToken(token),
+			onError: (err: any) => {
+				console.error('ObLLM: LLM Error:', err);
+				new Notice(`ObLLM Error: ${err.message}`);
+			}
+		});
 	}
 
 	// ── Multi-source combine ──
 
 	private async combineSources() {
+		const view = await this.activateView();
 		const chunks = this.indexStore.getAllChunks();
 		if (chunks.length === 0) {
-			new Notice('ObLLM: No indexed notes. Run "Index vault" first.');
+			new Notice('ObLLM: No indexed notes found.');
 			return;
 		}
 
 		const sourceFiles = [...new Set(chunks.map((c) => c.source))];
-		const scored: ScoredChunk[] = chunks
+		const scoredBase: ScoredChunk[] = chunks
 			.slice(0, this.settings.maxChunks * 2)
 			.map((c) => ({ chunk: c, score: 1 }));
+
+		view.appendToken(`### Combining insights from ${sourceFiles.length} sources...\n\n`);
 
 		const prompt = [
 			'You are a research assistant.',
 			`Analyze the following notes from ${sourceFiles.length} different sources.`,
 			'Identify recurring themes, connections, contradictions, and key insights.',
-			'Organize your response with clear headings and cite sources using [number].',
+			'Organize your response with clear headings.',
 			'',
 			'Sources:',
-			this.promptBuilder.formatContext(scored),
+			this.promptBuilder.formatContext(scoredBase),
 		].join('\n');
 
-		new Notice('ObLLM: Analyzing sources...');
-		const response = await this.llmProvider.generate({ prompt });
-		const withCitations = this.citationLinker.linkCitations(response, scored);
-
-		const file = await this.app.vault.create(
-			`ObLLM Insights - ${new Date().toISOString().slice(0, 10)}.md`,
-			withCitations
-		);
-		const leaf = this.app.workspace.getLeaf(false);
-		await leaf.openFile(file);
-		new Notice('ObLLM: Multi-source analysis complete!');
+		await this.llmProvider.generate({
+			prompt,
+			stream: true,
+			onToken: (token) => view.appendToken(token),
+			onError: (err: any) => {
+				console.error('ObLLM: LLM Error:', err);
+			}
+		});
 	}
 
 	// ── Audio Overview ──
 
-	private async generateAudioOverview() {
-		const chunks = this.indexStore.getAllChunks();
-		if (chunks.length === 0) {
-			new Notice('ObLLM: No indexed notes. Run "Index vault" first.');
-			return;
-		}
+	private async generateAudioOverview(providedChunks?: ScoredChunk[]) {
+		const view = await this.activateView();
 
-		const scored: ScoredChunk[] = chunks
-			.slice(0, this.settings.maxChunks)
-			.map((c) => ({ chunk: c, score: 1 }));
+		let scored: ScoredChunk[];
+		if (providedChunks) {
+			scored = providedChunks;
+		} else {
+			const chunks = this.indexStore.getAllChunks();
+			if (chunks.length === 0) {
+				new Notice('ObLLM: No indexed notes found.');
+				return;
+			}
+			scored = chunks.slice(0, this.settings.maxChunks).map((c) => ({ chunk: c, score: 1 }));
+		}
 
 		const ttsEngine = createTTSEngine(
 			this.settings.ttsProvider,
@@ -428,21 +579,16 @@ export default class ObLLMPlugin extends Plugin {
 
 		const overview = new AudioOverview(this.llmProvider, ttsEngine);
 
-		try {
-			const script = await overview.generate(scored, (status) => {
-				new Notice(`ObLLM: ${status}`);
-			});
+		view.appendToken(`### Generating Audio Overview...\n\n`);
 
-			// Save the script as a note
-			const file = await this.app.vault.create(
-				`ObLLM Audio Script - ${new Date().toISOString().slice(0, 10)}.md`,
-				script
-			);
-			const leaf = this.app.workspace.getLeaf(false);
-			await leaf.openFile(file);
-			new Notice('ObLLM: Audio overview complete!');
+		try {
+			await overview.generate(scored, (status) => {
+				view.appendToken(`* ${status}\n`);
+			});
+			new Notice('ObLLM: Audio overview generation started!');
 		} catch (err: any) {
 			new Notice(`ObLLM: Audio error — ${err.message}`);
 		}
 	}
 }
+

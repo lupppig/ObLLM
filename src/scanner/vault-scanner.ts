@@ -18,7 +18,9 @@ export class VaultScanner {
 	}
 
 	getFiles(): FileInfo[] {
-		return this.app.vault.getFiles()
+		const allFiles = this.app.vault.getFiles();
+		console.log(`ObLLM: Total files in vault: ${allFiles.length}`);
+		return allFiles
 			.filter((file) => this.isSupported(file))
 			.map((file) => ({
 				path: file.path,
@@ -50,19 +52,27 @@ export class VaultScanner {
 
 	private isSupported(file: TFile): boolean {
 		const ext = '.' + file.extension;
-		if (!this.settings.supportedExtensions.includes(ext)) {
+		const supported = this.settings.supportedExtensions.includes(ext);
+
+		if (!supported) return false;
+
+		// Always exclude internal Obsidian folders
+		if (file.path.startsWith('.obsidian/') || file.path.startsWith('.obsidian\\')) {
 			return false;
 		}
 
+		// Check explicit exclusions
 		for (const excluded of this.settings.excludedFolders) {
-			if (file.path.startsWith(excluded + '/') || file.path.startsWith(excluded + '\\')) {
+			if (excluded.length > 0 && (file.path.startsWith(excluded + '/') || file.path.startsWith(excluded + '\\') || file.path === excluded)) {
 				return false;
 			}
 		}
 
+		// If indexedFolders is NOT empty, we filter.
+		// BUT: For "natural" feel, we might want to ignore this if it was never set.
 		if (this.settings.indexedFolders.length > 0) {
 			const inIndexed = this.settings.indexedFolders.some(
-				(folder) => file.path.startsWith(folder + '/') || file.path.startsWith(folder + '\\')
+				(folder) => folder.length > 0 && (file.path.startsWith(folder + '/') || file.path.startsWith(folder + '\\') || file.path === folder)
 			);
 			if (!inIndexed) return false;
 		}

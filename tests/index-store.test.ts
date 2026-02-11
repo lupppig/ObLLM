@@ -2,9 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { VectorDB } from '../src/storage/db';
 import { IndexStore } from '../src/retrieval/index-store';
 import type { Chunk } from '../src/scanner/chunker';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 
 const testChunks: Chunk[] = [
 	{ id: 'file1.md#chunk-0', text: 'First chunk content.', source: 'file1.md', heading: 'Intro', startOffset: 0, endOffset: 20 },
@@ -12,22 +9,17 @@ const testChunks: Chunk[] = [
 	{ id: 'file2.md#chunk-0', text: 'Another file chunk.', source: 'file2.md', startOffset: 0, endOffset: 19 },
 ];
 
-describe('IndexStore (SQLite)', () => {
+describe('IndexStore (WASM SQLite)', () => {
 	let db: VectorDB;
 	let store: IndexStore;
-	let dbPath: string;
 
-	beforeEach(() => {
-		dbPath = path.join(os.tmpdir(), `obllm-test-${Date.now()}.db`);
-		// Use the project root (relative to tests/) to find node_modules
-		const projectRoot = path.join(__dirname, '..');
-		db = new VectorDB(projectRoot, 768, dbPath);
+	beforeEach(async () => {
+		db = await VectorDB.create(768);
 		store = new IndexStore(db);
 	});
 
 	afterEach(() => {
-		db.close();
-		try { fs.unlinkSync(dbPath); } catch { /* ignore */ }
+		if (db) db.close();
 	});
 
 	it('starts with zero chunks', () => {
@@ -99,21 +91,23 @@ describe('IndexStore (SQLite)', () => {
 		expect(store.chunkCount).toBe(0);
 	});
 
-	it('persists data across IndexStore instances', () => {
+	it('persists data across binary export/import', async () => {
 		store.addChunks(testChunks.slice(0, 2), 'file1.md', 1000);
 
-		// Close and reopen
+		// Export
+		const data = db.export();
 		db.close();
-		const projectRoot = path.join(__dirname, '..');
-		const db2 = new VectorDB(projectRoot, 768, dbPath);
+
+		// Re-import
+		const db2 = await VectorDB.create(768, data);
 		const store2 = new IndexStore(db2);
 
 		expect(store2.chunkCount).toBe(2);
 		expect(store2.getChunkById('file1.md#chunk-0')?.text).toBe('First chunk content.');
 
 		db2.close();
-		// Re-assign for afterEach cleanup
-		db = new VectorDB(projectRoot, 768, dbPath);
-		store = new IndexStore(db);
+
+		// Reset for afterEach
+		db = await VectorDB.create(768);
 	});
 });
