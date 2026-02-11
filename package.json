@@ -5,7 +5,8 @@
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "node esbuild.config.mjs production"
+		"build": "node esbuild.config.mjs production",
+		"test": "vitest run"
 	},
 	"keywords": [
 		"obsidian",
@@ -22,7 +23,8 @@
 		"builtin-modules": "^4.0.0",
 		"esbuild": "^0.24.0",
 		"obsidian": "latest",
-		"typescript": "^5.7.0"
+		"typescript": "^5.7.0",
+		"vitest": "^4.0.18"
 	},
 	"dependencies": {
 		"@ai-sdk/google": "^3.0.23",
