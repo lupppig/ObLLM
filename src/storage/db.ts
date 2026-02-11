@@ -1,8 +1,4 @@
-// Native modules — loaded at runtime, externalized in esbuild
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Database = require('better-sqlite3');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const sqliteVec = require('sqlite-vec');
+import * as path from 'path';
 import type { Chunk } from '../scanner/chunker';
 
 export interface VectorSearchResult {
@@ -13,9 +9,19 @@ export interface VectorSearchResult {
 export class VectorDB {
 	private db: any;
 	private embeddingDimension: number;
+	private pluginDir: string;
 
-	constructor(dbPath: string, embeddingDimension = 768) {
+	constructor(pluginDir: string, embeddingDimension = 768, overrideDbPath?: string) {
+		this.pluginDir = pluginDir;
 		this.embeddingDimension = embeddingDimension;
+
+		// Load native modules with absolute paths to bypass Obsidian's restricted module resolution
+		// eslint-disable-next-line @typescript-eslint/no-var-requires
+		const Database = require(path.join(pluginDir, 'node_modules', 'better-sqlite3'));
+		// eslint-disable-next-line @typescript-eslint/no-var-requires
+		const sqliteVec = require(path.join(pluginDir, 'node_modules', 'sqlite-vec'));
+
+		const dbPath = overrideDbPath || path.join(pluginDir, 'obllm.db');
 		this.db = new Database(dbPath);
 		this.db.pragma('journal_mode = WAL');
 		sqliteVec.load(this.db);

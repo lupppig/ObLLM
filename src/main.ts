@@ -43,8 +43,7 @@ export default class ObLLMPlugin extends Plugin {
 			chunkOverlap: this.settings.chunkOverlap,
 		});
 
-		const dbPath = `${this.manifest.dir}/obllm.db`;
-		this.db = new VectorDB(dbPath);
+		this.db = new VectorDB(this.manifest.dir!);
 		this.indexStore = new IndexStore(this.db);
 
 		this.llmProvider = this.createLLMProvider();

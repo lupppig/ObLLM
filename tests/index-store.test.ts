@@ -19,7 +19,9 @@ describe('IndexStore (SQLite)', () => {
 
 	beforeEach(() => {
 		dbPath = path.join(os.tmpdir(), `obllm-test-${Date.now()}.db`);
-		db = new VectorDB(dbPath);
+		// Use the project root (relative to tests/) to find node_modules
+		const projectRoot = path.join(__dirname, '..');
+		db = new VectorDB(projectRoot, 768, dbPath);
 		store = new IndexStore(db);
 	});
 
@@ -102,7 +104,8 @@ describe('IndexStore (SQLite)', () => {
 
 		// Close and reopen
 		db.close();
-		const db2 = new VectorDB(dbPath);
+		const projectRoot = path.join(__dirname, '..');
+		const db2 = new VectorDB(projectRoot, 768, dbPath);
 		const store2 = new IndexStore(db2);
 
 		expect(store2.chunkCount).toBe(2);
@@ -110,7 +113,7 @@ describe('IndexStore (SQLite)', () => {
 
 		db2.close();
 		// Re-assign for afterEach cleanup
-		db = new VectorDB(dbPath);
+		db = new VectorDB(projectRoot, 768, dbPath);
 		store = new IndexStore(db);
 	});
 });
