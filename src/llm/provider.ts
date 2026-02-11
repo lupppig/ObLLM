@@ -1,5 +1,12 @@
+export interface StructuredPrompt {
+	system: string;
+	context: string;
+	userQuery: string;
+}
+
 export interface GenerateParams {
 	prompt: string;
+	structuredPrompt?: StructuredPrompt;
 	context?: string;
 	stream?: boolean;
 	onToken?: (token: string) => void;

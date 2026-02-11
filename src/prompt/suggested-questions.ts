@@ -26,7 +26,12 @@ export class SuggestedQuestions {
 		].join('\n');
 
 		try {
-			const response = await this.llmProvider.generate({ prompt });
+			const structuredPrompt = {
+				system: 'You are a research assistant. Suggest ' + count + ' specific questions based on notes. Return ONLY questions 1-' + count + '.',
+				context: context,
+				userQuery: 'Suggest questions based on these notes.'
+			};
+			const response = await this.llmProvider.generate({ prompt: '', structuredPrompt });
 			return this.parseQuestions(response, count);
 		} catch {
 			return [];

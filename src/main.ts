@@ -365,15 +365,16 @@ export default class ObLLMPlugin extends Plugin {
 
 				view.setStatus('Building prompt...');
 				view.setLoaderText('ObLLM is thinking...');
-				const prompt = this.promptBuilder.buildConversationPrompt(query, chunks, history);
-				console.log('ObLLM: Prompt built, length:', prompt.length);
-				view.setStatus(`Prompt size: ${prompt.length} chars`);
+				const structuredPrompt = this.promptBuilder.buildConversationPrompt(query, chunks, history);
+				console.log('ObLLM: Prompt built');
+				view.setStatus(`Vault Context: ${chunks.length} chunks`);
 
 				console.log('ObLLM: Calling LLMProvider.generate...');
 				view.setStatus('Handover to AI SDK...');
 				let fullResponse = '';
 				await this.llmProvider.generate({
-					prompt,
+					prompt: '',
+					structuredPrompt,
 					stream: true,
 					onToken: (token) => {
 						if (!fullResponse) {
@@ -503,10 +504,11 @@ export default class ObLLMPlugin extends Plugin {
 		const label = labels[template];
 		view.appendToken(`### Generating ${label}...\n\n`);
 
-		const prompt = this.promptBuilder.buildPrompt(template, 'Generate based on my notes', scored);
+		const structuredPrompt = this.promptBuilder.buildPrompt(template, 'Generate based on my notes', scored);
 
 		await this.llmProvider.generate({
-			prompt,
+			prompt: '',
+			structuredPrompt,
 			stream: true,
 			onToken: (token) => view.appendToken(token),
 			onError: (err: any) => {

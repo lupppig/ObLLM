@@ -16,13 +16,36 @@ export class UnifiedProvider implements LLMProvider {
 		console.log('ObLLM: UnifiedProvider.generate called', { stream: params.stream });
 		try {
 			const model = this.registry.getLanguageModel(this.settings);
-			const { prompt, stream, onToken, context } = params;
+			const { prompt, structuredPrompt, stream, onToken, context: legacyContext } = params;
 
 			const messages: any[] = [];
-			if (context) {
-				messages.push({ role: 'system', content: `Context:\n${context}` });
+
+			if (structuredPrompt) {
+				// 1. System Role: Core Instructions
+				messages.push({ role: 'system', content: structuredPrompt.system });
+
+				// 2. System Role: Metadata
+				messages.push({ role: 'system', content: `Current Date: ${new Date().toLocaleDateString()}` });
+
+				// 3. User Role: Separated Context and Query
+				const userContent = [
+					'<context>',
+					structuredPrompt.context,
+					'</context>',
+					'',
+					'<user_query>',
+					structuredPrompt.userQuery,
+					'</user_query>'
+				].join('\n');
+
+				messages.push({ role: 'user', content: userContent });
+			} else {
+				// Legacy support for plain string prompts
+				if (legacyContext) {
+					messages.push({ role: 'system', content: `Context:\n${legacyContext}` });
+				}
+				messages.push({ role: 'user', content: prompt });
 			}
-			messages.push({ role: 'user', content: prompt });
 
 			console.log('ObLLM: UnifiedProvider messages:', messages);
 

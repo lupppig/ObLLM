@@ -22,7 +22,7 @@ export class AudioOverview {
 		onStatus?.('Generating audio script...');
 
 		const prompt = this.promptBuilder.buildPrompt('audio', '', chunks);
-		const script = await this.llmProvider.generate({ prompt });
+		const script = await this.llmProvider.generate({ prompt: '', structuredPrompt: prompt });
 
 		onStatus?.('Converting to speech...');
 

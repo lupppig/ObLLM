@@ -45,7 +45,7 @@ export class ChatView extends ItemView {
 
 		const header = container.createDiv({ cls: 'obllm-view-header' });
 		header.createEl('h4', { text: 'ObLLM Agent' });
-		this.versionTagEl = header.createSpan({ cls: 'obllm-view-version', text: `v0.1.7-HEALTH (${new Date().toLocaleTimeString()})` });
+		this.versionTagEl = header.createSpan({ cls: 'obllm-view-version', text: `v0.1.8-SECURE (${new Date().toLocaleTimeString()})` });
 
 		const clearBtn = header.createEl('button', {
 			cls: 'obllm-clear-btn clickable-icon',
