@@ -10,6 +10,8 @@ const context = await esbuild.context({
 	external: [
 		"obsidian",
 		"electron",
+		"better-sqlite3",
+		"sqlite-vec",
 		"@codemirror/autocomplete",
 		"@codemirror/collab",
 		"@codemirror/commands",

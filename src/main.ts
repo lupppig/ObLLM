@@ -5,6 +5,7 @@ import { VaultScanner } from './scanner/vault-scanner';
 import { Chunker } from './scanner/chunker';
 import { getFileReader } from './scanner/file-reader';
 import { IndexStore } from './retrieval/index-store';
+import { VectorDB } from './storage/db';
 import { KeywordRetriever } from './retrieval/keyword-retriever';
 import { EmbeddingRetriever } from './retrieval/embedding-retriever';
 import { HybridRetriever } from './retrieval/hybrid-retriever';
@@ -16,13 +17,14 @@ import { CitationLinker } from './prompt/citation-linker';
 import { ChatModal } from './ui/chat-modal';
 import { StatusBarManager } from './ui/status-bar';
 
-const INDEX_FILE = 'obllm-index.json';
+
 
 export default class ObLLMPlugin extends Plugin {
 	settings!: ObLLMSettings;
 
 	private scanner!: VaultScanner;
 	private chunker!: Chunker;
+	private db!: VectorDB;
 	private indexStore!: IndexStore;
 	private retriever!: Retriever;
 	private llmProvider!: LLMProvider;
@@ -39,21 +41,9 @@ export default class ObLLMPlugin extends Plugin {
 			chunkOverlap: this.settings.chunkOverlap,
 		});
 
-		this.indexStore = new IndexStore(
-			async (data) => {
-				const path = `${this.manifest.dir}/${INDEX_FILE}`;
-				await this.app.vault.adapter.write(path, data);
-			},
-			async () => {
-				const path = `${this.manifest.dir}/${INDEX_FILE}`;
-				try {
-					return await this.app.vault.adapter.read(path);
-				} catch {
-					return null;
-				}
-			}
-		);
-		await this.indexStore.load();
+		const dbPath = `${this.manifest.dir}/obllm.db`;
+		this.db = new VectorDB(dbPath);
+		this.indexStore = new IndexStore(this.db);
 
 		this.retriever = this.createRetriever();
 		this.llmProvider = this.createLLMProvider();
@@ -105,7 +95,9 @@ export default class ObLLMPlugin extends Plugin {
 		);
 	}
 
-	onunload() { }
+	onunload() {
+		if (this.db) this.db.close();
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -132,7 +124,7 @@ export default class ObLLMPlugin extends Plugin {
 			return keyword;
 		}
 
-		const embedding = new EmbeddingRetriever(this.indexStore, this.llmProvider);
+		const embedding = new EmbeddingRetriever(this.db, this.llmProvider);
 
 		if (this.settings.retrievalMethod === 'embedding') {
 			return embedding;

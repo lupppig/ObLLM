@@ -17,6 +17,7 @@
 	"author": "klein",
 	"license": "MIT",
 	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.13",
 		"@types/node": "^22.0.0",
 		"builtin-modules": "^4.0.0",
 		"esbuild": "^0.24.0",
@@ -27,7 +28,9 @@
 		"@ai-sdk/google": "^3.0.23",
 		"@ai-sdk/openai": "^3.0.26",
 		"ai": "^6.0.78",
+		"better-sqlite3": "^12.6.2",
 		"ollama-ai-provider": "^1.2.0",
-		"pdf-parse": "^1.1.1"
+		"pdf-parse": "^1.1.1",
+		"sqlite-vec": "0.1.7-alpha.2"
 	}
 }

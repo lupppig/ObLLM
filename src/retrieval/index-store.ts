@@ -1,79 +1,50 @@
 import type { Chunk } from '../scanner/chunker';
-
-export interface IndexData {
-	chunks: Chunk[];
-	fileTimestamps: Record<string, number>;
-	lastIndexedAt: number;
-}
-
-const EMPTY_INDEX: IndexData = {
-	chunks: [],
-	fileTimestamps: {},
-	lastIndexedAt: 0,
-};
+import type { VectorDB } from '../storage/db';
 
 export class IndexStore {
-	private data: IndexData;
-	private saveFn: (data: string) => Promise<void>;
-	private loadFn: () => Promise<string | null>;
+	private db: VectorDB;
 
-	constructor(
-		saveFn: (data: string) => Promise<void>,
-		loadFn: () => Promise<string | null>
-	) {
-		this.data = { ...EMPTY_INDEX, chunks: [], fileTimestamps: {} };
-		this.saveFn = saveFn;
-		this.loadFn = loadFn;
+	constructor(db: VectorDB) {
+		this.db = db;
 	}
 
 	async load(): Promise<void> {
-		const raw = await this.loadFn();
-		if (raw) {
-			try {
-				this.data = JSON.parse(raw);
-			} catch {
-				this.data = { ...EMPTY_INDEX, chunks: [], fileTimestamps: {} };
-			}
-		}
+		// No-op — SQLite is always persisted
 	}
 
 	async save(): Promise<void> {
-		await this.saveFn(JSON.stringify(this.data));
+		// No-op — SQLite writes are immediate
 	}
 
 	addChunks(chunks: Chunk[], filePath: string, mtime: number): void {
-		this.removeChunksForFile(filePath);
-		this.data.chunks.push(...chunks);
-		this.data.fileTimestamps[filePath] = mtime;
-		this.data.lastIndexedAt = Date.now();
+		this.db.addChunks(chunks, filePath, mtime);
 	}
 
 	removeChunksForFile(filePath: string): void {
-		this.data.chunks = this.data.chunks.filter((c) => c.source !== filePath);
-		delete this.data.fileTimestamps[filePath];
+		this.db.removeChunksForFile(filePath);
 	}
 
 	getAllChunks(): Chunk[] {
-		return this.data.chunks;
+		return this.db.getAllChunks();
 	}
 
 	getChunkById(id: string): Chunk | undefined {
-		return this.data.chunks.find((c) => c.id === id);
+		return this.db.getChunkById(id);
+	}
+
+	getChunksBySource(source: string): Chunk[] {
+		return this.db.getChunksBySource(source);
 	}
 
 	getFileTimestamp(filePath: string): number | undefined {
-		return this.data.fileTimestamps[filePath];
-	}
-
-	get lastIndexedAt(): number {
-		return this.data.lastIndexedAt;
+		return this.db.getFileTimestamp(filePath);
 	}
 
 	get chunkCount(): number {
-		return this.data.chunks.length;
+		return this.db.chunkCount;
 	}
 
 	clear(): void {
-		this.data = { ...EMPTY_INDEX, chunks: [], fileTimestamps: {} };
+		this.db.clear();
 	}
 }
