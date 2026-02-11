@@ -17,6 +17,8 @@ import { CitationLinker } from './prompt/citation-linker';
 import { SuggestedQuestions } from './prompt/suggested-questions';
 import { ChatModal } from './ui/chat-modal';
 import { StatusBarManager } from './ui/status-bar';
+import { AudioOverview } from './audio/audio-overview';
+import { createTTSEngine } from './audio/tts-engine';
 
 export default class ObLLMPlugin extends Plugin {
 	settings!: ObLLMSettings;
@@ -111,6 +113,12 @@ export default class ObLLMPlugin extends Plugin {
 			id: 'combine-sources',
 			name: 'Combine insights from multiple sources',
 			callback: () => this.combineSources(),
+		});
+
+		this.addCommand({
+			id: 'audio-overview',
+			name: 'Generate audio overview',
+			callback: () => this.generateAudioOverview(),
 		});
 
 		// ── File watchers ──
@@ -391,5 +399,45 @@ export default class ObLLMPlugin extends Plugin {
 		const leaf = this.app.workspace.getLeaf(false);
 		await leaf.openFile(file);
 		new Notice('ObLLM: Multi-source analysis complete!');
+	}
+
+	// ── Audio Overview ──
+
+	private async generateAudioOverview() {
+		const chunks = this.indexStore.getAllChunks();
+		if (chunks.length === 0) {
+			new Notice('ObLLM: No indexed notes. Run "Index vault" first.');
+			return;
+		}
+
+		const scored: ScoredChunk[] = chunks
+			.slice(0, this.settings.maxChunks)
+			.map((c) => ({ chunk: c, score: 1 }));
+
+		const ttsEngine = createTTSEngine(
+			this.settings.ttsProvider,
+			this.settings.apiKey,
+			this.settings.ttsVoice,
+			this.settings.ttsSpeed
+		);
+
+		const overview = new AudioOverview(this.llmProvider, ttsEngine);
+
+		try {
+			const script = await overview.generate(scored, (status) => {
+				new Notice(`ObLLM: ${status}`);
+			});
+
+			// Save the script as a note
+			const file = await this.app.vault.create(
+				`ObLLM Audio Script - ${new Date().toISOString().slice(0, 10)}.md`,
+				script
+			);
+			const leaf = this.app.workspace.getLeaf(false);
+			await leaf.openFile(file);
+			new Notice('ObLLM: Audio overview complete!');
+		} catch (err: any) {
+			new Notice(`ObLLM: Audio error — ${err.message}`);
+		}
 	}
 }

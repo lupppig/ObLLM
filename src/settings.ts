@@ -19,7 +19,9 @@ export interface ObLLMSettings {
 	chunkOverlap: number;
 
 	ttsEnabled: boolean;
-	ttsProvider: 'openai' | 'browser';
+	ttsProvider: 'browser' | 'gemini' | 'openai';
+	ttsVoice: string;
+	ttsSpeed: number;
 }
 
 export const DEFAULT_SETTINGS: ObLLMSettings = {
@@ -44,4 +46,6 @@ export const DEFAULT_SETTINGS: ObLLMSettings = {
 
 	ttsEnabled: false,
 	ttsProvider: 'browser',
+	ttsVoice: '',
+	ttsSpeed: 1.0,
 };

@@ -234,5 +234,51 @@ export class ObLLMSettingTab extends PluginSettingTab {
 						}
 					})
 			);
+
+		containerEl.createEl('h2', { text: 'Text-to-Speech' });
+
+		new Setting(containerEl)
+			.setName('TTS Engine')
+			.setDesc('Engine for audio overview generation.')
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption('browser', 'Browser (free, built-in)')
+					.addOption('gemini', 'Gemini TTS')
+					.addOption('openai', 'OpenAI TTS')
+					.setValue(this.host.settings.ttsProvider)
+					.onChange(async (value) => {
+						this.host.settings.ttsProvider = value as any;
+						await this.host.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('TTS Voice')
+			.setDesc('Voice name. Browser: system voice name. Gemini: Kore, Puck, etc. OpenAI: alloy, echo, fable, nova, onyx, shimmer.')
+			.addText((text) =>
+				text
+					.setPlaceholder('Leave empty for default')
+					.setValue(this.host.settings.ttsVoice)
+					.onChange(async (value) => {
+						this.host.settings.ttsVoice = value;
+						await this.host.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('TTS Speed')
+			.setDesc('Playback speed (0.5 to 2.0).')
+			.addText((text) =>
+				text
+					.setPlaceholder('1.0')
+					.setValue(String(this.host.settings.ttsSpeed))
+					.onChange(async (value) => {
+						const num = parseFloat(value);
+						if (!isNaN(num) && num >= 0.5 && num <= 2.0) {
+							this.host.settings.ttsSpeed = num;
+							await this.host.saveSettings();
+						}
+					})
+			);
 	}
 }
