@@ -14,10 +14,9 @@ import { UnifiedProvider } from './llm/unified-provider';
 import type { LLMProvider } from './llm/provider';
 import { PromptBuilder } from './prompt/prompt-builder';
 import { CitationLinker } from './prompt/citation-linker';
+import { SuggestedQuestions } from './prompt/suggested-questions';
 import { ChatModal } from './ui/chat-modal';
 import { StatusBarManager } from './ui/status-bar';
-
-
 
 export default class ObLLMPlugin extends Plugin {
 	settings!: ObLLMSettings;
@@ -30,6 +29,7 @@ export default class ObLLMPlugin extends Plugin {
 	private llmProvider!: LLMProvider;
 	private promptBuilder!: PromptBuilder;
 	private citationLinker!: CitationLinker;
+	private suggestedQuestions!: SuggestedQuestions;
 	private statusBar!: StatusBarManager;
 
 	async onload() {
@@ -45,16 +45,19 @@ export default class ObLLMPlugin extends Plugin {
 		this.db = new VectorDB(dbPath);
 		this.indexStore = new IndexStore(this.db);
 
-		this.retriever = this.createRetriever();
 		this.llmProvider = this.createLLMProvider();
+		this.retriever = this.createRetriever();
 		this.promptBuilder = new PromptBuilder();
 		this.citationLinker = new CitationLinker();
+		this.suggestedQuestions = new SuggestedQuestions(this.llmProvider);
 
 		const statusBarEl = this.addStatusBarItem();
 		this.statusBar = new StatusBarManager(statusBarEl);
 		this.statusBar.showReady(this.indexStore.chunkCount);
 
 		this.addSettingTab(new ObLLMSettingTab(this.app, this));
+
+		// ── Commands ──
 
 		this.addCommand({
 			id: 'index-vault',
@@ -69,9 +72,39 @@ export default class ObLLMPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: 'explain-note',
+			name: 'Explain this note',
+			callback: () => this.explainCurrentNote(),
+		});
+
+		this.addCommand({
 			id: 'summarize-notes',
 			name: 'Summarize notes',
-			callback: () => this.summarizeNotes(),
+			callback: () => this.generateDocument('summary'),
+		});
+
+		this.addCommand({
+			id: 'generate-study-guide',
+			name: 'Generate study guide',
+			callback: () => this.generateDocument('study-guide'),
+		});
+
+		this.addCommand({
+			id: 'generate-faq',
+			name: 'Generate FAQ',
+			callback: () => this.generateDocument('faq'),
+		});
+
+		this.addCommand({
+			id: 'generate-briefing',
+			name: 'Generate briefing doc',
+			callback: () => this.generateDocument('briefing'),
+		});
+
+		this.addCommand({
+			id: 'suggest-ideas',
+			name: 'Suggest ideas & insights',
+			callback: () => this.generateDocument('ideation'),
 		});
 
 		this.addCommand({
@@ -79,6 +112,8 @@ export default class ObLLMPlugin extends Plugin {
 			name: 'Combine insights from multiple sources',
 			callback: () => this.combineSources(),
 		});
+
+		// ── File watchers ──
 
 		this.registerEvent(
 			this.app.vault.on('modify', (file) => {
@@ -107,11 +142,14 @@ export default class ObLLMPlugin extends Plugin {
 		await this.saveData(this.settings);
 		this.llmProvider = this.createLLMProvider();
 		this.retriever = this.createRetriever();
+		this.suggestedQuestions = new SuggestedQuestions(this.llmProvider);
 		this.chunker = new Chunker({
 			chunkSize: this.settings.chunkSize,
 			chunkOverlap: this.settings.chunkOverlap,
 		});
 	}
+
+	// ── Factory methods ──
 
 	private createLLMProvider(): LLMProvider {
 		return new UnifiedProvider(this.settings);
@@ -133,6 +171,8 @@ export default class ObLLMPlugin extends Plugin {
 		return new HybridRetriever(keyword, embedding);
 	}
 
+	// ── Incremental indexing ──
+
 	private async onFileChanged(path: string, extension: string) {
 		const ext = '.' + extension;
 		if (!this.settings.supportedExtensions.includes(ext)) return;
@@ -148,19 +188,15 @@ export default class ObLLMPlugin extends Plugin {
 			const result = await reader.read(content);
 			const chunks = this.chunker.chunk(result.text, path, result.headings);
 			this.indexStore.addChunks(chunks, path, Date.now());
-			await this.indexStore.save();
 			this.statusBar.showReady(this.indexStore.chunkCount);
 		} catch (err: any) {
 			console.error(`ObLLM: Failed to re-index ${path}:`, err);
 		}
 	}
 
-	private async indexVault() {
-		if (!this.settings.apiKey) {
-			new Notice('ObLLM: Please set your API key in settings first.');
-			return;
-		}
+	// ── Vault indexing ──
 
+	private async indexVault() {
 		const files = this.scanner.getFiles();
 		new Notice(`ObLLM: Indexing ${files.length} files...`);
 
@@ -175,17 +211,14 @@ export default class ObLLMPlugin extends Plugin {
 			try {
 				const reader = getFileReader(fileInfo.extension);
 				let content: string | ArrayBuffer;
-
 				if (fileInfo.extension === 'pdf') {
 					content = await this.scanner.readFileBinary(fileInfo.path);
 				} else {
 					content = await this.scanner.readFileContent(fileInfo.path);
 				}
-
 				const result = await reader.read(content);
 				const chunks = this.chunker.chunk(result.text, fileInfo.path, result.headings);
 				this.indexStore.addChunks(chunks, fileInfo.path, fileInfo.mtime);
-
 				processed++;
 				this.statusBar.showIndexing(processed, files.length);
 			} catch (err: any) {
@@ -193,77 +226,139 @@ export default class ObLLMPlugin extends Plugin {
 			}
 		}
 
-		await this.indexStore.save();
 		this.statusBar.showReady(this.indexStore.chunkCount);
 		new Notice(`ObLLM: Indexed ${processed} files (${this.indexStore.chunkCount} chunks)`);
 	}
 
+	// ── Chat ──
+
 	private openChat() {
-		if (!this.settings.apiKey) {
-			new Notice('ObLLM: Please set your API key in settings first.');
-			return;
-		}
+		const allSources = [...new Set(this.indexStore.getAllChunks().map((c) => c.source))];
 
-		const modal = new ChatModal(this.app, async (query: string) => {
-			const chunks = await this.retriever.search(query, this.settings.maxChunks);
-			if (chunks.length === 0) {
-				modal.setResponse('No relevant notes found. Try indexing your vault first.');
-				return;
-			}
+		const modal = new ChatModal(this.app, {
+			onSubmit: async (query: string, sourceFilter?: string[]) => {
+				const chunks = await this.retriever.search(query, this.settings.maxChunks);
+				const filtered = sourceFilter
+					? chunks.filter((sc) => sourceFilter.includes(sc.chunk.source))
+					: chunks;
 
-			const prompt = this.promptBuilder.buildPrompt('qa', query, chunks);
-			const context = this.promptBuilder.formatContext(chunks);
+				if (filtered.length === 0) {
+					modal.setResponse('No relevant notes found. Try indexing your vault first.');
+					return;
+				}
 
-			const response = await this.llmProvider.generate({
-				prompt,
-				stream: true,
-				onToken: (token) => modal.appendToken(token),
-			});
+				const prompt = this.promptBuilder.buildPrompt('qa', query, filtered);
+				const response = await this.llmProvider.generate({
+					prompt,
+					stream: true,
+					onToken: (token) => modal.appendToken(token),
+				});
 
-			const withCitations = this.citationLinker.linkCitations(response, chunks);
-			modal.setResponse(withCitations);
+				const withCitations = this.citationLinker.linkCitations(response, filtered);
+				modal.setResponse(withCitations);
+			},
+			onSuggestQuestions: async () => {
+				const chunks = this.indexStore.getAllChunks();
+				if (chunks.length === 0) return [];
+				const scored: ScoredChunk[] = chunks
+					.slice(0, 20)
+					.map((c) => ({ chunk: c, score: 1 }));
+				return this.suggestedQuestions.generate(scored);
+			},
+			sources: allSources,
 		});
 
 		modal.open();
 	}
 
-	private async summarizeNotes() {
-		if (!this.settings.apiKey) {
-			new Notice('ObLLM: Please set your API key in settings first.');
+	// ── Explain current note ──
+
+	private async explainCurrentNote() {
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) {
+			new Notice('ObLLM: No active file to explain.');
 			return;
 		}
 
+		const content = await this.app.vault.cachedRead(activeFile);
+		const chunks = this.chunker.chunk(content, activeFile.path);
+		const scored: ScoredChunk[] = chunks.map((c) => ({ chunk: c, score: 1 }));
+
+		const prompt = this.promptBuilder.buildPrompt('explain', '', scored);
+
+		const modal = new ChatModal(this.app, {
+			onSubmit: async (query: string) => {
+				const followUpChunks = await this.retriever.search(query, this.settings.maxChunks);
+				const allChunks = [...scored, ...followUpChunks];
+				const followUpPrompt = this.promptBuilder.buildPrompt('qa', query, allChunks);
+
+				const response = await this.llmProvider.generate({
+					prompt: followUpPrompt,
+					stream: true,
+					onToken: (token) => modal.appendToken(token),
+				});
+				const withCitations = this.citationLinker.linkCitations(response, allChunks);
+				modal.setResponse(withCitations);
+			},
+			onSuggestQuestions: async () => {
+				return this.suggestedQuestions.generate(scored);
+			},
+			sources: [activeFile.path],
+		});
+
+		modal.open();
+
+		// Stream initial explanation
+		new Notice(`ObLLM: Explaining ${activeFile.basename}...`);
+		const response = await this.llmProvider.generate({
+			prompt,
+			stream: true,
+			onToken: (token) => modal.appendToken(token),
+		});
+		const withCitations = this.citationLinker.linkCitations(response, scored);
+		modal.setResponse(withCitations);
+	}
+
+	// ── Document generation (summary, study guide, FAQ, briefing, ideation) ──
+
+	private async generateDocument(template: 'summary' | 'study-guide' | 'faq' | 'briefing' | 'ideation') {
 		const chunks = this.indexStore.getAllChunks();
 		if (chunks.length === 0) {
 			new Notice('ObLLM: No indexed notes. Run "Index vault" first.');
 			return;
 		}
 
-		const scoredChunks: ScoredChunk[] = chunks
+		const scored: ScoredChunk[] = chunks
 			.slice(0, this.settings.maxChunks)
 			.map((c) => ({ chunk: c, score: 1 }));
 
-		const prompt = this.promptBuilder.buildPrompt('summary', '', scoredChunks);
+		const labels: Record<string, string> = {
+			'summary': 'Summary',
+			'study-guide': 'Study Guide',
+			'faq': 'FAQ',
+			'briefing': 'Briefing',
+			'ideation': 'Ideas & Insights',
+		};
 
-		new Notice('ObLLM: Generating summary...');
+		const label = labels[template];
+		new Notice(`ObLLM: Generating ${label}...`);
+
+		const prompt = this.promptBuilder.buildPrompt(template, '', scored);
 		const response = await this.llmProvider.generate({ prompt });
-		const withCitations = this.citationLinker.linkCitations(response, scoredChunks);
+		const withCitations = this.citationLinker.linkCitations(response, scored);
 
 		const file = await this.app.vault.create(
-			`ObLLM Summary - ${new Date().toISOString().slice(0, 10)}.md`,
+			`ObLLM ${label} - ${new Date().toISOString().slice(0, 10)}.md`,
 			withCitations
 		);
 		const leaf = this.app.workspace.getLeaf(false);
 		await leaf.openFile(file);
-		new Notice('ObLLM: Summary created!');
+		new Notice(`ObLLM: ${label} created!`);
 	}
 
-	private async combineSources() {
-		if (!this.settings.apiKey) {
-			new Notice('ObLLM: Please set your API key in settings first.');
-			return;
-		}
+	// ── Multi-source combine ──
 
+	private async combineSources() {
 		const chunks = this.indexStore.getAllChunks();
 		if (chunks.length === 0) {
 			new Notice('ObLLM: No indexed notes. Run "Index vault" first.');
@@ -271,7 +366,7 @@ export default class ObLLMPlugin extends Plugin {
 		}
 
 		const sourceFiles = [...new Set(chunks.map((c) => c.source))];
-		const scoredChunks: ScoredChunk[] = chunks
+		const scored: ScoredChunk[] = chunks
 			.slice(0, this.settings.maxChunks * 2)
 			.map((c) => ({ chunk: c, score: 1 }));
 
@@ -282,12 +377,12 @@ export default class ObLLMPlugin extends Plugin {
 			'Organize your response with clear headings and cite sources using [number].',
 			'',
 			'Sources:',
-			this.promptBuilder.formatContext(scoredChunks),
+			this.promptBuilder.formatContext(scored),
 		].join('\n');
 
 		new Notice('ObLLM: Analyzing sources...');
 		const response = await this.llmProvider.generate({ prompt });
-		const withCitations = this.citationLinker.linkCitations(response, scoredChunks);
+		const withCitations = this.citationLinker.linkCitations(response, scored);
 
 		const file = await this.app.vault.create(
 			`ObLLM Insights - ${new Date().toISOString().slice(0, 10)}.md`,
