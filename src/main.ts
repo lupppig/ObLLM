@@ -1,4 +1,5 @@
-import { Notice, Plugin, TFile } from 'obsidian';
+import { FileSystemAdapter, Notice, Plugin, TFile } from 'obsidian';
+import * as path from 'path';
 import { ObLLMSettings, DEFAULT_SETTINGS } from './settings';
 import { ObLLMSettingTab } from './settings-tab';
 import { VaultScanner } from './scanner/vault-scanner';
@@ -43,7 +44,12 @@ export default class ObLLMPlugin extends Plugin {
 			chunkOverlap: this.settings.chunkOverlap,
 		});
 
-		this.db = new VectorDB(this.manifest.dir!);
+		let pluginDir = this.manifest.dir!;
+		if (this.app.vault.adapter instanceof FileSystemAdapter) {
+			pluginDir = path.join(this.app.vault.adapter.getBasePath(), this.manifest.dir!);
+		}
+
+		this.db = new VectorDB(pluginDir);
 		this.indexStore = new IndexStore(this.db);
 
 		this.llmProvider = this.createLLMProvider();
