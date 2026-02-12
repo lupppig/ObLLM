@@ -1,7 +1,7 @@
 {
 	"id": "obllm",
 	"name": "ObLLM",
-	"version": "0.1.8",
+	"version": "0.1.9",
 	"minAppVersion": "1.0.0",
 	"description": "A local-first LLM research assistant for Obsidian. Ask questions, summarize notes, generate audio overviews — all grounded in your vault.",
 	"author": "klein",

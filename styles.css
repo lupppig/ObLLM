@@ -347,3 +347,82 @@
 		opacity: 0.7;
 	}
 }
+
+/* Note Suggestion Card (v0.1.9) */
+.obllm-note-card {
+	background: var(--background-secondary-alt);
+	border: 1px solid var(--interactive-accent);
+	border-radius: 8px;
+	padding: 12px;
+	margin: 8px 0;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	animation: obllm-fade-in 0.3s ease-out;
+}
+
+.obllm-note-card-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-weight: 600;
+	color: var(--interactive-accent);
+	font-size: 0.9em;
+}
+
+.obllm-note-card-title {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-normal);
+}
+
+.obllm-note-card-actions {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+}
+
+.obllm-note-action-btn {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 10px;
+	font-size: 0.8em;
+	border-radius: 4px;
+	cursor: pointer;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	transition: all 0.15s ease;
+}
+
+.obllm-note-action-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+	border-color: var(--text-muted);
+}
+
+.obllm-note-action-btn.is-primary {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.obllm-note-action-btn.is-primary:hover {
+	opacity: 0.9;
+}
+
+@keyframes obllm-fade-in {
+	from {
+		opacity: 0;
+		transform: scale(0.98);
+	}
+
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}

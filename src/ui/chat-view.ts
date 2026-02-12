@@ -45,7 +45,7 @@ export class ChatView extends ItemView {
 
 		const header = container.createDiv({ cls: 'obllm-view-header' });
 		header.createEl('h4', { text: 'ObLLM Agent' });
-		this.versionTagEl = header.createSpan({ cls: 'obllm-view-version', text: `v0.1.8-SECURE (${new Date().toLocaleTimeString()})` });
+		this.versionTagEl = header.createSpan({ cls: 'obllm-view-version', text: `v0.1.9-NOTE (${new Date().toLocaleTimeString()})` });
 
 		const clearBtn = header.createEl('button', {
 			cls: 'obllm-clear-btn clickable-icon',
@@ -231,6 +231,36 @@ export class ChatView extends ItemView {
 			btn.disabled = true;
 			btn.addClass('is-done');
 		});
+	}
+
+	public addNoteSuggestion(title: string, content: string, onSave: (title: string, content: string) => void) {
+		const card = this.messagesEl.createDiv({ cls: 'obllm-note-card' });
+
+		const header = card.createDiv({ cls: 'obllm-note-card-header' });
+		setIcon(header, 'file-plus');
+		header.createSpan({ cls: 'obllm-note-card-title', text: title });
+
+		const actions = card.createDiv({ cls: 'obllm-note-card-actions' });
+
+		const previewBtn = actions.createEl('button', { cls: 'obllm-note-action-btn' });
+		setIcon(previewBtn, 'eye');
+		previewBtn.createSpan({ text: 'Preview' });
+		previewBtn.addEventListener('click', () => {
+			this.showSourceCard({ chunk: { text: content, source: title } } as any, previewBtn);
+		});
+
+		const saveBtn = actions.createEl('button', { cls: 'obllm-note-action-btn is-primary' });
+		setIcon(saveBtn, 'save');
+		saveBtn.createSpan({ text: 'Save' });
+		saveBtn.addEventListener('click', () => {
+			onSave(title, content);
+			saveBtn.disabled = true;
+			saveBtn.setText('Saved');
+			setIcon(saveBtn, 'check');
+			saveBtn.removeClass('is-primary');
+		});
+
+		this.scrollToBottom();
 	}
 
 	private addUserMessage(text: string) {

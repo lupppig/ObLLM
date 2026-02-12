@@ -405,13 +405,31 @@ export default class ObLLMPlugin extends Plugin {
 				console.log('ObLLM: Response finished and rendered');
 				view.setStatus('Done');
 
-				// Detect note creation blocks (Agency)
+				// Detect note creation blocks (Agency) - Hardened Detection (v0.1.9)
+
+				// 1. JSON Detection (New Standard)
+				const jsonRegex = /```json\n([\s\S]*?)```/g;
+				let jMatch;
+				while ((jMatch = jsonRegex.exec(fullResponse)) !== null) {
+					try {
+						const data = JSON.parse(jMatch[1].trim());
+						if (data.action === 'create_note' && data.title && data.content) {
+							view.addNoteSuggestion(data.title, data.content, (title, content) => {
+								this.createNoteFromAgent(title, content);
+							});
+						}
+					} catch (e) {
+						// Not a valid note JSON, ignore
+					}
+				}
+
+				// 2. Legacy/Markdown Detection (Fallback)
 				const noteRegex = /```note\nTitle: (.*)\nContent: ([\s\S]*?)```/g;
 				let match;
 				while ((match = noteRegex.exec(fullResponse)) !== null) {
 					const title = match[1].trim();
 					const content = match[2].trim();
-					view.addActionButton(`Create Note: ${title}`, () => {
+					view.addNoteSuggestion(title, content, (title, content) => {
 						this.createNoteFromAgent(title, content);
 					});
 				}
@@ -478,7 +496,6 @@ export default class ObLLMPlugin extends Plugin {
 		});
 	}
 
-	// ── Document generation (summary, study guide, FAQ, briefing, ideation) ──
 
 	private async generateDocument(template: 'summary' | 'study-guide' | 'faq' | 'briefing' | 'ideation') {
 		const view = await this.activateView();
