@@ -39,15 +39,15 @@ export class ObLLMSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('API Key')
 			.setDesc('Your API key for the selected provider.')
-			.addText((text) =>
-				text
-					.setPlaceholder('Enter API key...')
+			.addText((text) => {
+				text.inputEl.type = 'password';
+				text.setPlaceholder('Enter API key...')
 					.setValue(this.host.settings.apiKey)
 					.onChange(async (value) => {
 						this.host.settings.apiKey = value;
 						await this.host.saveSettings();
-					})
-			);
+					});
+			});
 
 		new Setting(containerEl)
 			.setName('API Base URL')

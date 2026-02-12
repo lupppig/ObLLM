@@ -1,6 +1,6 @@
 {
 	"name": "obllm",
-	"version": "0.1.10",
+	"version": "0.1.11",
 	"description": "ObLLM — A local-first LLM research assistant for Obsidian",
 	"main": "main.js",
 	"scripts": {
