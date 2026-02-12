@@ -426,3 +426,98 @@
 		transform: scale(1);
 	}
 }
+
+/* Audio Generation Card (v0.1.10) */
+.obllm-audio-card {
+	background: var(--background-secondary-alt);
+	border: 1px solid var(--text-accent);
+	border-radius: 12px;
+	padding: 16px;
+	margin: 12px 0;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	box-shadow: var(--shadow-s);
+	animation: obllm-fade-in 0.3s ease-out;
+	position: relative;
+	overflow: hidden;
+}
+
+.obllm-audio-card::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 4px;
+	height: 100%;
+	background: var(--text-accent);
+}
+
+.obllm-audio-card-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-weight: 600;
+	color: var(--text-normal);
+	font-size: 1em;
+}
+
+.obllm-audio-card-steps {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.obllm-audio-step {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 0.85em;
+	color: var(--text-muted);
+	transition: all 0.3s ease;
+}
+
+.obllm-audio-step.is-active {
+	color: var(--text-accent);
+	font-weight: 500;
+}
+
+.obllm-audio-step.is-done {
+	color: var(--text-success);
+}
+
+.obllm-audio-step.is-done .obllm-step-icon {
+	color: var(--text-success);
+}
+
+.obllm-step-icon {
+	width: 18px;
+	display: flex;
+	justify-content: center;
+}
+
+.obllm-audio-pulse {
+	width: 8px;
+	height: 8px;
+	background: var(--text-accent);
+	border-radius: 50%;
+	display: inline-block;
+	animation: obllm-dot-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes obllm-dot-pulse {
+	0% {
+		transform: scale(0.8);
+		opacity: 0.5;
+	}
+
+	50% {
+		transform: scale(1.2);
+		opacity: 1;
+	}
+
+	100% {
+		transform: scale(0.8);
+		opacity: 0.5;
+	}
+}

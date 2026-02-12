@@ -43,7 +43,7 @@ export const DEFAULT_SETTINGS: ObLLMSettings = {
 	chunkOverlap: 64,
 
 	ttsEnabled: false,
-	ttsProvider: 'browser',
+	ttsProvider: 'gemini',
 	ttsVoice: '',
 	ttsSpeed: 1.0,
 };

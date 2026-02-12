@@ -598,13 +598,13 @@ export default class ObLLMPlugin extends Plugin {
 
 		const overview = new AudioOverview(this.llmProvider, ttsEngine);
 
-		view.appendToken(`### Generating Audio Overview...\n\n`);
+		const audioCard = view.addAudioGenerationCard();
 
 		try {
-			await overview.generate(scored, (status) => {
-				view.appendToken(`* ${status}\n`);
+			await overview.generate(scored, (stepId, status) => {
+				view.updateAudioStep(audioCard, stepId, status);
 			});
-			new Notice('ObLLM: Audio overview generation started!');
+			new Notice('ObLLM: Audio overview ready!');
 		} catch (err: any) {
 			new Notice(`ObLLM: Audio error — ${err.message}`);
 		}

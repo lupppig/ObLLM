@@ -45,7 +45,7 @@ export class ChatView extends ItemView {
 
 		const header = container.createDiv({ cls: 'obllm-view-header' });
 		header.createEl('h4', { text: 'ObLLM Agent' });
-		this.versionTagEl = header.createSpan({ cls: 'obllm-view-version', text: `v0.1.9-NOTE (${new Date().toLocaleTimeString()})` });
+		this.versionTagEl = header.createSpan({ cls: 'obllm-view-version', text: `v0.1.10-AUDIO (${new Date().toLocaleTimeString()})` });
 
 		const clearBtn = header.createEl('button', {
 			cls: 'obllm-clear-btn clickable-icon',
@@ -261,6 +261,55 @@ export class ChatView extends ItemView {
 		});
 
 		this.scrollToBottom();
+	}
+
+	public addAudioGenerationCard() {
+		const card = this.messagesEl.createDiv({ cls: 'obllm-audio-card' });
+		card.createDiv({ cls: 'obllm-audio-card-header', text: 'Audio Deep Dive' });
+
+		const stepsContainer = card.createDiv({ cls: 'obllm-audio-card-steps' });
+
+		const createStep = (id: string, text: string, icon: string) => {
+			const step = stepsContainer.createDiv({ cls: 'obllm-audio-step', attr: { 'data-step-id': id } });
+			const iconEl = step.createDiv({ cls: 'obllm-step-icon' });
+			setIcon(iconEl, icon);
+			step.createSpan({ text });
+			return step;
+		};
+
+		createStep('script', 'Drafting Narrative Script', 'pencil');
+		createStep('synth', 'Synthesizing Voice', 'mic');
+		createStep('play', 'Ready for Playback', 'play-circle');
+
+		this.scrollToBottom();
+		return card;
+	}
+
+	public updateAudioStep(card: HTMLDivElement, stepId: string, status: 'active' | 'done' | 'error') {
+		const steps = card.querySelectorAll('.obllm-audio-step');
+		steps.forEach((stepEl) => {
+			const el = stepEl as HTMLDivElement;
+			if (el.dataset.stepId === stepId) {
+				el.removeClass('is-active', 'is-done', 'is-error');
+				if (status === 'active') {
+					el.addClass('is-active');
+					const iconEl = el.querySelector('.obllm-step-icon');
+					if (iconEl) {
+						iconEl.empty();
+						iconEl.createDiv({ cls: 'obllm-audio-pulse' });
+					}
+				} else if (status === 'done') {
+					el.addClass('is-done');
+					const iconEl = el.querySelector('.obllm-step-icon');
+					if (iconEl) {
+						iconEl.empty();
+						setIcon(iconEl as HTMLElement, 'check-circle');
+					}
+				}
+			} else if (status === 'active') {
+				// If one is active, others that are not 'done' should be dimmed (default)
+			}
+		});
 	}
 
 	private addUserMessage(text: string) {

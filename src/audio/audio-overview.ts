@@ -17,16 +17,19 @@ export class AudioOverview {
 
 	async generate(
 		chunks: ScoredChunk[],
-		onStatus?: (status: string) => void
+		onStatus?: (step: 'script' | 'synth' | 'play', status: 'active' | 'done') => void
 	): Promise<string> {
-		onStatus?.('Generating audio script...');
+		onStatus?.('script', 'active');
 
 		const prompt = this.promptBuilder.buildPrompt('audio', '', chunks);
 		const script = await this.llmProvider.generate({ prompt: '', structuredPrompt: prompt });
+		onStatus?.('script', 'done');
 
-		onStatus?.('Converting to speech...');
-
+		onStatus?.('synth', 'active');
 		await this.ttsEngine.speak(script);
+		onStatus?.('synth', 'done');
+
+		onStatus?.('play', 'done');
 
 		return script;
 	}
