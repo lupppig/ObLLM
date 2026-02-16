@@ -291,6 +291,14 @@ export default class ObLLMPlugin extends Plugin {
 
 	private async openChat() {
 		const view = await this.activateView();
+		let currentAbortController: AbortController | null = null;
+
+		view.onCancel = () => {
+			if (currentAbortController) {
+				currentAbortController.abort();
+				currentAbortController = null;
+			}
+		};
 
 		view.onCheckHealth = async () => {
 			return await this.llmProvider.checkHealth!();
@@ -369,13 +377,15 @@ export default class ObLLMPlugin extends Plugin {
 				console.log('ObLLM: Prompt built');
 				view.setStatus(`Vault Context: ${chunks.length} chunks`);
 
-				console.log('ObLLM: Calling LLMProvider.generate...');
 				view.setStatus('Handover to AI SDK...');
 				let fullResponse = '';
+				currentAbortController = new AbortController();
+
 				await this.llmProvider.generate({
 					prompt: '',
 					structuredPrompt,
 					stream: true,
+					abortSignal: currentAbortController.signal,
 					onToken: (token) => {
 						if (!fullResponse) {
 							console.log('ObLLM: First token actually received in main');
@@ -483,10 +493,11 @@ export default class ObLLMPlugin extends Plugin {
 
 		view.appendToken(`### Explaining: ${activeFile.basename}\n\n`);
 
-		const prompt = this.promptBuilder.buildPrompt('qa', `Explain this note: ${activeFile.path}`, scored);
+		const structuredPrompt = this.promptBuilder.buildPrompt('qa', `Explain this note: ${activeFile.path}`, scored);
 
 		await this.llmProvider.generate({
-			prompt,
+			prompt: '',
+			structuredPrompt,
 			stream: true,
 			onToken: (token) => view.appendToken(token),
 			onError: (err: any) => {

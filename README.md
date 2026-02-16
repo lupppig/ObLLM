@@ -17,6 +17,8 @@ A local-first AI research assistant for [Obsidian](https://obsidian.md). ObLLM i
 | **Research Ideation** | Trends, connections, and research questions |
 | **Audio Overview** | Podcast-style audio from notes (Browser, Gemini, or OpenAI TTS) |
 | **Multi-source Combine** | Cross-reference insights across sources |
+| **Stop Generation** | Cancel ongoing AI responses instantly |
+| **Premium Audio UI** | Blinking microphone indicator during generation |
 
 ## Retrieval Methods
 
@@ -30,7 +32,6 @@ A local-first AI research assistant for [Obsidian](https://obsidian.md). ObLLM i
 |----------|:-:|:-:|:-:|
 | Gemini | ✅ | ✅ | ✅ |
 | OpenAI | ✅ | ✅ | ✅ |
-| Ollama | ✅ | ✅ | — |
 | Custom | ✅ | — | — |
 
 ## Installation
@@ -40,36 +41,26 @@ A local-first AI research assistant for [Obsidian](https://obsidian.md). ObLLM i
    cd /path/to/vault/.obsidian/plugins
    git clone https://github.com/lupppig/ObLLM.git
    cd ObLLM
+   
+   # Enable pnpm via Node's corepack (recommended)
+   corepack enable
+   corepack prepare pnpm@latest --activate
+   
    pnpm install
    pnpm run build
    ```
 2. Restart Obsidian and enable **ObLLM** in Settings → Community Plugins.
 3. Set your LLM provider and API key in the ObLLM settings tab.
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `ObLLM: Index vault` | Indexes/re-indexes your vault |
-| `ObLLM: Ask a question` | Opens the chat modal |
-| `ObLLM: Explain this note` | Explains the active note |
-| `ObLLM: Summarize notes` | Generates a summary document |
-| `ObLLM: Generate study guide` | Creates a study guide |
-| `ObLLM: Generate FAQ` | Creates an FAQ document |
-| `ObLLM: Generate briefing doc` | Creates an executive briefing |
-| `ObLLM: Suggest ideas & insights` | Research ideation |
-| `ObLLM: Combine insights from multiple sources` | Cross-source analysis |
-| `ObLLM: Generate audio overview` | Podcast-style TTS overview |
-
 ## Settings
 
 ### LLM Provider
-- **Provider** — Gemini, OpenAI, Ollama, or Custom
+- **Provider** — Gemini, OpenAI, or Custom
 - **API Key** — Your provider API key
 - **Model** — Model name (e.g. `gemini-2.5-flash`)
 
 ### Embeddings
-- **Embedding Provider** — Gemini, OpenAI, Ollama, or None
+- **Embedding Provider** — Gemini, OpenAI, or None
 - **Embedding Model** — e.g. `gemini-embedding-001`
 
 ### Vault Scanning
@@ -95,6 +86,22 @@ pnpm install
 pnpm run dev      # Watch mode
 pnpm run build    # Production build
 pnpm test         # Run tests (vitest)
+```
+
+## Troubleshooting
+
+### pnpm Issues
+If you encounter issues running `pnpm`, it is likely because it hasn't been enabled on your system. Since Node.js v16.13, `pnpm` is managed via `corepack`.
+
+**Run these commands to enable it:**
+```bash
+corepack enable
+corepack prepare pnpm@latest --activate
+```
+
+Alternatively, you can install it globally via npm:
+```bash
+npm install -g pnpm
 ```
 
 ## License

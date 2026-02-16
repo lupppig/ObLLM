@@ -51,7 +51,7 @@ export class UnifiedProvider implements LLMProvider {
 
 			if (stream && onToken) {
 				console.log('ObLLM: Entering generateStream');
-				return await this.generateStream(model, messages, onToken);
+				return await this.generateStream(model, messages, onToken, params.abortSignal);
 			}
 
 			console.log('ObLLM: Calling generateText (non-stream)');
@@ -72,13 +72,19 @@ export class UnifiedProvider implements LLMProvider {
 	private async generateStream(
 		model: any,
 		messages: any[],
-		onToken: (token: string) => void
+		onToken: (token: string) => void,
+		externalSignal?: AbortSignal
 	): Promise<string> {
 		const abortController = new AbortController();
 		const timeoutId = setTimeout(() => {
 			console.log('ObLLM: Manual 30s timeout reached - aborting');
 			abortController.abort();
 		}, 30000);
+
+		// Handle external cancellation
+		if (externalSignal) {
+			externalSignal.addEventListener('abort', () => abortController.abort());
+		}
 
 		let result;
 		try {

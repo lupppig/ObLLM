@@ -15,9 +15,11 @@ export class ChatView extends ItemView {
 	private currentChunks: ScoredChunk[] = [];
 	private statusFooterEl!: HTMLDivElement;
 	private versionTagEl!: HTMLSpanElement;
+	private stopBtnEl!: HTMLButtonElement;
 
 	// Callback props from plugin
 	public onSubmit?: (query: string, history: ConversationHistory) => Promise<void>;
+	public onCancel?: () => void;
 	public onSuggestQuestions?: () => Promise<string[]>;
 	public onCheckHealth?: () => Promise<{ ok: boolean; message: string }>;
 
@@ -87,6 +89,17 @@ export class ChatView extends ItemView {
 			}
 		});
 
+		this.stopBtnEl = header.createEl('button', {
+			cls: 'obllm-stop-btn clickable-icon',
+			attr: { 'aria-label': 'Stop generation' }
+		});
+		setIcon(this.stopBtnEl, 'square');
+		this.stopBtnEl.hide();
+		this.stopBtnEl.addEventListener('click', () => {
+			if (this.onCancel) this.onCancel();
+			this.resetGenerating();
+		});
+
 		this.messagesEl = container.createDiv({ cls: 'obllm-chat-messages' });
 
 		this.loaderEl = container.createDiv({ cls: 'obllm-loader', text: 'Thinking...' });
@@ -138,6 +151,7 @@ export class ChatView extends ItemView {
 		this.conversation.add('user', query);
 
 		this.loaderEl.show();
+		this.stopBtnEl.show();
 		this.scrollToBottom();
 
 		// Create assistant message placeholder
@@ -265,7 +279,10 @@ export class ChatView extends ItemView {
 
 	public addAudioGenerationCard() {
 		const card = this.messagesEl.createDiv({ cls: 'obllm-audio-card' });
-		card.createDiv({ cls: 'obllm-audio-card-header', text: 'Audio Deep Dive' });
+		const cardHeader = card.createDiv({ cls: 'obllm-audio-card-header' });
+		cardHeader.createSpan({ text: 'Audio Deep Dive' });
+		const micIcon = cardHeader.createDiv({ cls: 'obllm-blinking-mic' });
+		setIcon(micIcon, 'mic');
 
 		const stepsContainer = card.createDiv({ cls: 'obllm-audio-card-steps' });
 
@@ -356,6 +373,7 @@ export class ChatView extends ItemView {
 	public resetGenerating() {
 		this.isGenerating = false;
 		this.loaderEl.hide();
+		this.stopBtnEl.hide();
 		this.currentStreamEl = null;
 		this.currentStreamText = '';
 		this.setStatus('Reset');

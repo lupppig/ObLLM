@@ -11,6 +11,7 @@ export interface GenerateParams {
 	stream?: boolean;
 	onToken?: (token: string) => void;
 	onError?: (err: any) => void;
+	abortSignal?: AbortSignal;
 }
 
 export interface LLMProvider {
